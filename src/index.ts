@@ -41,90 +41,61 @@ scene.add(lightBack);
 
 // # ===========Creating Bound Box ============
 
-const boundRange = 20;
+const groundGeo = new THREE.PlaneGeometry(20, 20, 1, 1);
+const groundMat = new THREE.MeshPhongMaterial({ color: 0xa0adaf, shininess: 155 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI * 0.5;
+ground.receiveShadow = true;
+scene.add(ground);
 
-const bound_material = new THREE.MeshStandardMaterial();
-bound_material.color = new THREE.Color(0x444488);
-bound_material.transparent = true;
-bound_material.opacity = 0.1;
-bound_material.side = THREE.BackSide;
-
-const edge_material = new THREE.LineBasicMaterial();
-edge_material.color = new THREE.Color(0xfffffff);
-
-const bound = new THREE.Mesh(new THREE.BoxGeometry(boundRange * 2, boundRange * 2, boundRange * 2), bound_material);
-const edges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(boundRange * 2, boundRange * 2, boundRange * 2)));
-
-scene.add(bound);
-scene.add(edges);
+const grid = new THREE.GridHelper(20, 20);
+// grid.material.opacity = 1.0;
+// grid.material.transparent = true;
+grid.position.set(0, 0.002, 0);
+scene.add(grid);
 
 // ===================== MAIN =====================
 
-let mouseTracker: THREE.Mesh;
-
-function create_mouse_tracking_ball() {
-  const sphereGeo = new THREE.SphereGeometry(1);
-  const sphereMat = new THREE.MeshStandardMaterial({
-    color: 0xffea00,
-  });
-  const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
-  mouseTracker = sphereMesh;
-  scene.add(mouseTracker);
-
-  // const mouse = new THREE.Vector2();
-  // const intersectionPoint = new THREE.Vector3();
-  // const planeNormal = new THREE.Vector3();
-  // const plane = new THREE.Plane();
-  // const raycaster = new THREE.Raycaster();
-
-  // window.addEventListener("mousemove", function (e) {
-  //   mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-  //   mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-  //   planeNormal.copy(camera.position).normalize();
-  //   plane.setFromNormalAndCoplanarPoint(planeNormal, scene.position);
-  //   raycaster.setFromCamera(mouse, camera);
-  //   raycaster.ray.intersectPlane(plane, intersectionPoint);
-  //   mouseTracker.position.copy(intersectionPoint);
-  // });
-  console.log(mouseTracker.geometry);
+class SoftBodyObject {
+  
 }
-create_mouse_tracking_ball();
-//
 
-fetch("src/bunny.json")
+const loadBunny = fetch("src/bunny.json")
   .then((response) => {
     return response.json();
   })
   .then((data) => {
     // console.log(data);
-    const geometry = new THREE.BufferGeometry();
-    const vertices = new Float32Array(data.verts);
-    geometry.setIndex(data.tetSurfaceTriIds);
-    geometry.setAttribute( 'position', new THREE.BufferAttribute( vertices, 3 ) );
-    geometry.computeTangents();
-    geometry.computeVertexNormals();
-    const material = new THREE.MeshStandardMaterial( { color: 0xff0000 } );
-    const mesh = new THREE.Mesh(geometry, material)
-    mesh.scale.set(10, 10, 10);
-    mesh.position.set(-10, 0, 0);
-    scene.add(mesh);
-    console.log(mesh.geometry);
+    const bunnyGeo = new THREE.BufferGeometry();
+    const bunnyVert = new Float32Array(data.verts);
+    bunnyGeo.setIndex(data.tetSurfaceTriIds);
+    bunnyGeo.setAttribute("position", new THREE.BufferAttribute(bunnyVert, 3));
+    bunnyGeo.computeVertexNormals();
+    // bunnyGeo.computeTangents();
+    const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+    const bunny = new THREE.Mesh(bunnyGeo, material);
+    // bunny.scale.set(10, 10, 10);
+    // bunny.position.set(-10, 0, 0);
+    scene.add(bunny);
+    // console.log(bunny.geometry);
   });
 
-async function main() {
-  let prevTime = 0;
-  renderer.setAnimationLoop(animate);
-
-  function animate(timestamp: number) {
-    let timediff = (timestamp - prevTime) / 1000;
-    renderer.render(scene, camera);
-    prevTime = timestamp;
+function main() {
+    let prevTime = 0;
+    renderer.setAnimationLoop(animate);
+    
+    function animate(timestamp: number) {
+      let timediff = (timestamp - prevTime) / 1000;
+      renderer.render(scene, camera);
+      prevTime = timestamp;
+    }
   }
+  
+document.onload = async () => {
+  await loadBunny;
 }
-
+main();
 // 'verts'          : vertex positions in three units.
 // 'tetIds'         : the indices of vertices that form tetrahedrons in four units.
 // 'tetEdgeIds'     : the indices of vertices that form edges in two units.
 // 'tetSurfaceTriIds' : the indices of vertices that form triangles of surface in three units.
-
-main();
