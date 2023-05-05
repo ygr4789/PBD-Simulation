@@ -23,10 +23,10 @@ module.exports = {
     ],
   },
   devServer: {
-    static: './',
+    static: "./",
     port: 3000,
     hot: true,
     open: true,
   },
-  mode: 'development'
+  mode: "development",
 };
