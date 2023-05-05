@@ -1,4 +1,5 @@
 import * as dat from "dat.gui";
+import * as Stats from "stats.js";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
@@ -231,10 +232,10 @@ class SoftBodyObject {
 
     this.renderUpdate();
   }
-  
-  move(x:number, y:number, z:number) {
-    for(let p of this.positions) {
-      p.add(new THREE.Vector3(x, y, z))
+
+  move(x: number, y: number, z: number) {
+    for (let p of this.positions) {
+      p.add(new THREE.Vector3(x, y, z));
     }
     this.renderUpdate();
   }
@@ -242,21 +243,16 @@ class SoftBodyObject {
 
 // ===================== MOUSE =====================
 
-
-function create_mouse_tracking_ball() {
+function mouseTrack() {
   const mouse = new THREE.Vector2();
-  const intersectionPoint = new THREE.Vector3();
-  const planeNormal = new THREE.Vector3();
-  const plane = new THREE.Plane();
   const raycaster = new THREE.Raycaster();
 
   window.addEventListener("mousemove", function (e) {
     mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-    planeNormal.copy(camera.position).normalize();
-    plane.setFromNormalAndCoplanarPoint(planeNormal, scene.position);
     raycaster.setFromCamera(mouse, camera);
-    raycaster.ray.intersectPlane(plane, intersectionPoint);
+    const intersects = raycaster.intersectObjects(objects.map((obj) => obj.mesh));
+    if (intersects.length !== 0) console.log(intersects);
   });
 }
 
@@ -269,10 +265,15 @@ function main() {
   let prevTime = 0;
   renderer.setAnimationLoop(animate);
 
+  const stats = new Stats();
+  document.body.appendChild(stats.dom);
+
   function animate(timestamp: number) {
     let timediff = (timestamp - prevTime) / 1000;
+    stats.begin();
     if (isPlay) updateStates(timediff);
     renderer.render(scene, camera);
+    stats.end();
     prevTime = timestamp;
   }
   function updateStates(dt: number) {
@@ -282,10 +283,10 @@ function main() {
   }
 }
 
-function init_gui() {
-  let controls = {
+function initGUI() {
+  const controls = {
     debug: () => {
-      console.log(scene.children)
+      console.log(scene.children);
     },
     toggle: () => {
       isPlay = !isPlay;
@@ -295,8 +296,8 @@ function init_gui() {
       object.move(5 * (0.5 - Math.random()), 0, 5 * (0.5 - Math.random()));
       objects.push(object);
     },
-    reset: ()=> {
-      for(let object of objects) {
+    reset: () => {
+      for (let object of objects) {
         object.mesh.geometry.dispose();
         object.edges.geometry.dispose();
         (object.mesh.material as THREE.Material).dispose();
@@ -305,19 +306,25 @@ function init_gui() {
         scene.remove(object.edges);
       }
       objects = [];
-    }
+    },
   };
 
-  var gui = new dat.GUI();
+  const gui = new dat.GUI();
   gui.add(controls, "debug");
   gui.add(controls, "toggle").name("Pause / Unpause");
   gui.add(controls, "add");
   gui.add(controls, "reset");
 }
 
+function preventDefault() {
+  document.oncontextmenu = () => false;
+  document.onselectstart = () => false;
+}
+
 window.onload = async () => {
   await loadBunny();
-  create_mouse_tracking_ball();
-  init_gui();
+  preventDefault();
+  mouseTrack();
+  initGUI();
   main();
 };
