@@ -235,6 +235,10 @@ class SoftBodyObject {
 
 // ===================== MAIN =====================
 
+
+
+// ===================== MAIN =====================
+
 let bunny: SoftBodyObject;
 let isPlay = false;
 let debugInfo: any;
