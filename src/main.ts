@@ -287,7 +287,7 @@ function init_gui() {
     debug: () => {
       console.log(scene.children)
     },
-    run: () => {
+    toggle: () => {
       isPlay = !isPlay;
     },
     add: () => {
@@ -310,7 +310,7 @@ function init_gui() {
 
   var gui = new dat.GUI();
   gui.add(controls, "debug");
-  gui.add(controls, "run");
+  gui.add(controls, "toggle").name("Pause / Unpause");
   gui.add(controls, "add");
   gui.add(controls, "reset");
 }
