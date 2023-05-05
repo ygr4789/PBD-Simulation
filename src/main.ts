@@ -174,7 +174,7 @@ class SoftBodyObject {
     for (let i = 0; i < this.positions.length; i++) {
       this.velocities[i].add(new THREE.Vector3(0, gravity * dt, 0));
     }
-    if (isGrabbed) this.grabInteract(dt);
+    if (grabbed === this.mesh) this.grabInteract(dt);
 
     for (let i = 0; i < this.positions.length; i++) {
       if (this.positions[i].y < 0.01) {
@@ -280,7 +280,7 @@ class SoftBodyObject {
 
 let grabbedPoint = new THREE.Vector3();
 let currentPoint = new THREE.Vector3();
-let isGrabbed = false;
+let grabbed: THREE.Object3D | null = null;
 
 function mouseTrack() {
   const mouse = new THREE.Vector2();
@@ -299,16 +299,16 @@ function mouseTrack() {
 
   window.addEventListener("mousedown", () => {
     const intersects = raycaster.intersectObjects(objects.map((obj) => obj.mesh));
-    if (intersects.length === 0) isGrabbed = false;
+    if (intersects.length === 0) grabbed = null;
     else {
       grabbedPoint.copy(intersects[0].point);
-      isGrabbed = true;
+      grabbed = intersects[0].object;
       controls.enabled = false;
     }
   });
 
   window.addEventListener("mouseup", () => {
-    isGrabbed = false;
+    grabbed = null;
     controls.enabled = true;
   });
 }
