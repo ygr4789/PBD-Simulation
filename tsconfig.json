@@ -1,38 +1,27 @@
 {
   "compilerOptions": {
-    "target": "es5",
-    "module": "ES2015",
-    "strict": true,
-    "outDir": "dist",
-    "sourceMap": true,
-    "lib": [ "es2017", "dom" ]
+    "outDir": "./dist",
+    "module": "ES6",
+    "target": "ES5",
+    // "rootDir": "./",
+    "moduleResolution": "node",
+    // "allowJs": true,
+    // "checkJs": true,
+    // "declaration": true,
+    // "sourceMap": true,
+    
+    "removeComments": true,
+    
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    // "strict": true,
+    // "strictFunctionTypes": true,
+    // "strictPropertyInitialization": true,
+    // "alwaysStrict": true,
+
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
   }
 }
-
-// {
-//   "compilerOptions": {
-//     "target": "es5",
-//     "module": "commonjs",
-//     "allowJs": true,
-//     "checkJs": true,
-//     "jsx": "preserve",
-//     "declaration": true,
-//     "outDir": "dist",
-//     "rootDir": "./",
-//     "removeComments": true,
-
-//     "strict": true,
-//     "noImplicitAny": true,
-//     "strictNullChecks": true,
-//     "strictFunctionTypes": true,
-//     "strictPropertyInitialization": true,
-//     "noImplicitThis": true,
-//     "alwaysStrict": true,
-
-//     "noUnusedLocals": true,
-//     "noUnusedParameters": true,
-//     "noImplicitReturns": true,
-//     "noFallthroughCasesInSwitch": true,
-//     "lib": [ "es2015", "dom" ]
-//   }
-// }

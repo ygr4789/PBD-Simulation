@@ -1,3 +1,4 @@
+import * as dat from "dat.gui";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
@@ -137,7 +138,7 @@ class SoftBodyObject {
             const x03 = new THREE.Vector3().subVectors(x3, x0);
             this.init_tet_volumes.push(new THREE.Vector3().crossVectors(x01, x02).dot(x03) / 6);
         }
-        
+
         this.edge_constrains = [];
         this.init_edge_lengths = [];
         for (let i = 0; i < file.tetEdgeIds.length; i += 2) {
@@ -165,20 +166,19 @@ class SoftBodyObject {
 
     update(dt: number) {
         const gravity = -0.1;
-        
-        let prev_positions = this.positions.map((v) => v.clone())
+
+        let prev_positions = this.positions.map((v) => v.clone());
         for (let i = 0; i < this.positions.length; i++) {
             this.velocities[i].add(new THREE.Vector3(0, gravity * dt, 0));
             this.positions[i].add(this.velocities[i].clone().multiplyScalar(dt));
-            
         }
-        
+
         for (let i = 0; i < this.positions.length; i++) {
             if (this.positions[i].y < 0.0) {
                 this.positions[i].setY(0.0);
             }
         }
-        
+
         for (let i = 0; i < this.tet_constrains.length; i++) {
             const [x0, x1, x2, x3] = [...this.tet_constrains[i]].map((tetId) => this.positions[tetId]);
             const x01 = new THREE.Vector3().subVectors(x1, x0);
@@ -193,15 +193,15 @@ class SoftBodyObject {
             const grad_x2_c = new THREE.Vector3().crossVectors(x03, x01);
             const grad_x3_c = new THREE.Vector3().crossVectors(x01, x02);
             const denom = [grad_x0_c, grad_x1_c, grad_x2_c, grad_x3_c].reduce((prev, cur) => {
-                return prev + (cur.length() ** 2);
-            }, 0)
-            const lambda = -6 * (volume - init_volume) / denom;
+                return prev + cur.length() ** 2;
+            }, 0);
+            const lambda = (-6 * (volume - init_volume)) / denom;
             x0.add(grad_x0_c.multiplyScalar(lambda));
             x1.add(grad_x1_c.multiplyScalar(lambda));
             x2.add(grad_x2_c.multiplyScalar(lambda));
             x3.add(grad_x3_c.multiplyScalar(lambda));
         }
-        
+
         for (let i = 0; i < this.edge_constrains.length; i++) {
             const [x0, x1] = [...this.edge_constrains[i]].map((edgeId) => this.positions[edgeId]);
             const x01 = new THREE.Vector3().subVectors(x1, x0);
@@ -211,11 +211,11 @@ class SoftBodyObject {
             x0.add(x01.clone().multiplyScalar(0.5 * (l - l0)));
             x1.add(x01.clone().multiplyScalar(-0.5 * (l - l0)));
         }
-        
+
         for (let i = 0; i < this.positions.length; i++) {
             this.velocities[i] = new THREE.Vector3().subVectors(this.positions[i], prev_positions[i]).multiplyScalar(1.0 / dt);
         }
-        
+
         this.renderUpdate();
     }
 
@@ -233,15 +233,12 @@ class SoftBodyObject {
     }
 }
 
-// ===================== MAIN =====================
-
-
+// ===================== COMMIT =====================
 
 // ===================== MAIN =====================
 
 let bunny: SoftBodyObject;
 let isPlay = false;
-let debugInfo: any;
 
 function main() {
     let prevTime = 0;
@@ -249,7 +246,7 @@ function main() {
 
     function animate(timestamp: number) {
         let timediff = (timestamp - prevTime) / 1000;
-        if(isPlay) updateStates(timediff);
+        if (isPlay) updateStates(timediff);
         renderer.render(scene, camera);
         prevTime = timestamp;
     }
@@ -258,29 +255,23 @@ function main() {
     }
 }
 
+function init_gui() {
+    let controls = {
+        debug: () => {console.log(1)},
+        run: () => {
+            isPlay = !isPlay;
+        }
+    };
 
-function init_controllers() {
-    const controller = document.querySelector('#controller');
-    
-    const debugButton = document.createElement('button')
-    debugButton.onclick = test;
-    debugButton.innerText = 'Debug'
-    controller?.appendChild(debugButton);
-    
-    const runButton = document.createElement('button')
-    runButton.onclick = () => {isPlay = !isPlay};
-    runButton.innerText = 'Run'
-    controller?.appendChild(runButton);
-    
-    function test() {
-        console.log(debugInfo);
-    }
+    var gui = new dat.GUI();
+    gui.add(controls, "debug");
+    gui.add(controls, "run");
 }
 
 window.onload = async () => {
     await loadBunny();
     bunny = new SoftBodyObject(bunnyData, scene);
-    init_controllers();
+    init_gui();
     main();
     // test();
 };

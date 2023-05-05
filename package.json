@@ -15,6 +15,7 @@
     "@babel/cli": "^7.21.0",
     "@babel/core": "^7.21.4",
     "@babel/preset-typescript": "^7.21.4",
+    "@types/dat.gui": "^0.7.9",
     "@types/kd-tree-javascript": "^1.0.1",
     "@types/three": "^0.150.0",
     "babel-loader": "^9.1.2",
@@ -25,6 +26,7 @@
     "webpack-dev-server": "^4.13.3"
   },
   "dependencies": {
+    "dat.gui": "^0.7.9",
     "three": "^0.151.3"
   }
 }
