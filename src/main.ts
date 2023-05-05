@@ -231,13 +231,38 @@ class SoftBodyObject {
 
     this.renderUpdate();
   }
+  
+  move(x:number, y:number, z:number) {
+    for(let p of this.positions) {
+      p.add(new THREE.Vector3(x, y, z))
+    }
+    this.renderUpdate();
+  }
 }
 
-// ===================== COMMIT =====================
+// ===================== MOUSE =====================
+
+
+function create_mouse_tracking_ball() {
+  const mouse = new THREE.Vector2();
+  const intersectionPoint = new THREE.Vector3();
+  const planeNormal = new THREE.Vector3();
+  const plane = new THREE.Plane();
+  const raycaster = new THREE.Raycaster();
+
+  window.addEventListener("mousemove", function (e) {
+    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    planeNormal.copy(camera.position).normalize();
+    plane.setFromNormalAndCoplanarPoint(planeNormal, scene.position);
+    raycaster.setFromCamera(mouse, camera);
+    raycaster.ray.intersectPlane(plane, intersectionPoint);
+  });
+}
 
 // ===================== MAIN =====================
 
-let bunny: SoftBodyObject;
+let objects: Array<SoftBodyObject> = [];
 let isPlay = false;
 
 function main() {
@@ -251,29 +276,48 @@ function main() {
     prevTime = timestamp;
   }
   function updateStates(dt: number) {
-    bunny.update(dt);
+    for (let object of objects) {
+      object.update(dt);
+    }
   }
 }
 
 function init_gui() {
   let controls = {
     debug: () => {
-      console.log(1);
+      console.log(scene.children)
     },
     run: () => {
       isPlay = !isPlay;
     },
+    add: () => {
+      const object = new SoftBodyObject(bunnyData, scene);
+      object.move(5 * (0.5 - Math.random()), 0, 5 * (0.5 - Math.random()));
+      objects.push(object);
+    },
+    reset: ()=> {
+      for(let object of objects) {
+        object.mesh.geometry.dispose();
+        object.edges.geometry.dispose();
+        (object.mesh.material as THREE.Material).dispose();
+        (object.edges.material as THREE.Material).dispose();
+        scene.remove(object.mesh);
+        scene.remove(object.edges);
+      }
+      objects = [];
+    }
   };
 
   var gui = new dat.GUI();
   gui.add(controls, "debug");
   gui.add(controls, "run");
+  gui.add(controls, "add");
+  gui.add(controls, "reset");
 }
 
 window.onload = async () => {
   await loadBunny();
-  bunny = new SoftBodyObject(bunnyData, scene);
+  create_mouse_tracking_ball();
   init_gui();
   main();
-  // test();
 };
