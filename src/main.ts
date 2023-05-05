@@ -166,18 +166,30 @@ class SoftBodyObject {
   }
 
   update(dt: number) {
-    const gravity = -0.1;
+    const gravity = -9.8;
+    const restitution = 0.5;
+    // const friction = 1000;
 
     let prev_positions = this.positions.map((v) => v.clone());
     for (let i = 0; i < this.positions.length; i++) {
       this.velocities[i].add(new THREE.Vector3(0, gravity * dt, 0));
-      this.positions[i].add(this.velocities[i].clone().multiplyScalar(dt));
+    }
+    if (isGrabbed) this.grabInteract(dt);
+
+    for (let i = 0; i < this.positions.length; i++) {
+      if (this.positions[i].y < 0.01) {
+        if (this.velocities[i].y < 0.0) {
+          this.velocities[i].setY(this.velocities[i].y * -restitution);
+        }
+        if (Math.abs(this.velocities[i].y) < 0.01) {
+          this.velocities[i].setY(0);
+          // this.velocities[i].multiplyScalar(1 - dt * friction);
+        }
+      }
     }
 
     for (let i = 0; i < this.positions.length; i++) {
-      if (this.positions[i].y < 0.0) {
-        this.positions[i].setY(0.0);
-      }
+      this.positions[i].add(this.velocities[i].clone().multiplyScalar(dt));
     }
 
     for (let i = 0; i < this.tet_constrains.length; i++) {
@@ -214,6 +226,12 @@ class SoftBodyObject {
     }
 
     for (let i = 0; i < this.positions.length; i++) {
+      if (this.positions[i].y < 0.0) {
+        this.positions[i].setY(0);
+      }
+    }
+
+    for (let i = 0; i < this.positions.length; i++) {
       this.velocities[i] = new THREE.Vector3().subVectors(this.positions[i], prev_positions[i]).multiplyScalar(1.0 / dt);
     }
 
@@ -233,6 +251,23 @@ class SoftBodyObject {
     this.renderUpdate();
   }
 
+  grabInteract(dt: number) {
+    const interaction = 1000;
+
+    let closestId = -1;
+    let closestDist = 1e9;
+    for (let i = 0; i < this.positions.length; i++) {
+      let dist = this.positions[i].distanceTo(grabbedPoint);
+      if (closestDist > dist) {
+        closestDist = dist;
+        closestId = i;
+      }
+    }
+
+    const grabDir = new THREE.Vector3().subVectors(currentPoint, this.positions[closestId]).normalize();
+    this.velocities[closestId].add(grabDir.multiplyScalar(interaction * dt));
+  }
+
   move(x: number, y: number, z: number) {
     for (let p of this.positions) {
       p.add(new THREE.Vector3(x, y, z));
@@ -243,23 +278,45 @@ class SoftBodyObject {
 
 // ===================== MOUSE =====================
 
+let grabbedPoint = new THREE.Vector3();
+let currentPoint = new THREE.Vector3();
+let isGrabbed = false;
+
 function mouseTrack() {
   const mouse = new THREE.Vector2();
   const raycaster = new THREE.Raycaster();
+  const planeNormal = new THREE.Vector3();
+  const plane = new THREE.Plane();
 
-  window.addEventListener("mousemove", function (e) {
+  window.addEventListener("mousemove", (e) => {
     mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    planeNormal.copy(camera.position).normalize();
+    plane.setFromNormalAndCoplanarPoint(planeNormal, grabbedPoint);
     raycaster.setFromCamera(mouse, camera);
+    raycaster.ray.intersectPlane(plane, currentPoint);
+  });
+
+  window.addEventListener("mousedown", () => {
     const intersects = raycaster.intersectObjects(objects.map((obj) => obj.mesh));
-    if (intersects.length !== 0) console.log(intersects);
+    if (intersects.length === 0) isGrabbed = false;
+    else {
+      grabbedPoint.copy(intersects[0].point);
+      isGrabbed = true;
+      controls.enabled = false;
+    }
+  });
+
+  window.addEventListener("mouseup", () => {
+    isGrabbed = false;
+    controls.enabled = true;
   });
 }
 
 // ===================== MAIN =====================
 
 let objects: Array<SoftBodyObject> = [];
-let isPlay = false;
+let isPlaying: Boolean = false;
 
 function main() {
   let prevTime = 0;
@@ -271,7 +328,7 @@ function main() {
   function animate(timestamp: number) {
     let timediff = (timestamp - prevTime) / 1000;
     stats.begin();
-    if (isPlay) updateStates(timediff);
+    if (isPlaying) updateStates(timediff);
     renderer.render(scene, camera);
     stats.end();
     prevTime = timestamp;
@@ -289,7 +346,7 @@ function initGUI() {
       console.log(scene.children);
     },
     toggle: () => {
-      isPlay = !isPlay;
+      isPlaying = !isPlaying;
     },
     add: () => {
       const object = new SoftBodyObject(bunnyData, scene);
