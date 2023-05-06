@@ -19,8 +19,8 @@ document.body.appendChild(renderer.domElement);
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000.0);
 camera.position.set(1, 1, 2);
 
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.listenToKeyEvents(window);
+const orbitControl = new OrbitControls(camera, renderer.domElement);
+orbitControl.listenToKeyEvents(window);
 
 function window_onsize() {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -71,6 +71,7 @@ type parsedData = {
   tetSurfaceTriIds: Array<number>; // the indices of vertices that form triangles of surface in three units.
 };
 const bunnyData = require("./assets/bunny.json");
+// const bunnyData = require("./assets/test.json");
 
 // ===================== BOUNDARY =====================
 
@@ -187,6 +188,7 @@ class SoftBodyObject {
 
   update(dt: number) {
     const gravity = -9.8;
+    const alpha = controls.invStiffness / dt / dt;
 
     let prev_positions = this.positions.map((v) => v.clone());
     for (let i = 0; i < this.positions.length; i++) {
@@ -198,17 +200,6 @@ class SoftBodyObject {
       this.positions[i].add(this.velocities[i].clone().multiplyScalar(dt));
     }
 
-    for (let i = 0; i < this.positions.length; i++) {
-      for (let k = 0; k < boundPositions.length; k++) {
-        const gap = new THREE.Vector3().subVectors(this.positions[i], boundPositions[k]).dot(boundNormals[k]);
-        if (gap < 0) {
-          if (i == 0 && k == 0) console.log("det");
-          this.positions[i].add(boundNormals[k].clone().multiplyScalar(-gap));
-          prev_positions[i].copy(this.positions[i]);
-        }
-      }
-    }
-
     for (let i = 0; i < this.tet_constrains.length; i++) {
       const [x0, x1, x2, x3] = [...this.tet_constrains[i]].map((tetId) => this.positions[tetId]);
       const w = [...this.tet_constrains[i]].map((tetId) => this.invMasses[tetId]);
@@ -217,20 +208,21 @@ class SoftBodyObject {
       const x03 = new THREE.Vector3().subVectors(x3, x0);
       const x12 = new THREE.Vector3().subVectors(x1, x2);
       const x13 = new THREE.Vector3().subVectors(x1, x3);
-      const volume = new THREE.Vector3().crossVectors(x01, x02).dot(x03) / 6;
-      const init_volume = this.init_tet_volumes[i];
       const grad_x0_c = new THREE.Vector3().crossVectors(x13, x12);
       const grad_x1_c = new THREE.Vector3().crossVectors(x02, x03);
       const grad_x2_c = new THREE.Vector3().crossVectors(x03, x01);
       const grad_x3_c = new THREE.Vector3().crossVectors(x01, x02);
-      const denom = [grad_x0_c, grad_x1_c, grad_x2_c, grad_x3_c].reduce((prev, cur, k) => {
-        return prev + w[k] * cur.length() ** 2;
-      }, 0);
+      const denom =
+        [grad_x0_c, grad_x1_c, grad_x2_c, grad_x3_c].reduce((prev, curr, k) => {
+          return prev + w[k] * curr.length() ** 2;
+        }, 0) + alpha;
+      const volume = new THREE.Vector3().crossVectors(x01, x02).dot(x03) / 6;
+      const init_volume = this.init_tet_volumes[i];
       const lambda = (-6 * (volume - init_volume)) / denom;
-      x0.add(grad_x0_c.multiplyScalar(lambda).multiplyScalar(w[0]));
-      x1.add(grad_x1_c.multiplyScalar(lambda).multiplyScalar(w[1]));
-      x2.add(grad_x2_c.multiplyScalar(lambda).multiplyScalar(w[2]));
-      x3.add(grad_x3_c.multiplyScalar(lambda).multiplyScalar(w[3]));
+      x0.add(grad_x0_c.multiplyScalar(lambda * w[0]));
+      x1.add(grad_x1_c.multiplyScalar(lambda * w[1]));
+      x2.add(grad_x2_c.multiplyScalar(lambda * w[2]));
+      x3.add(grad_x3_c.multiplyScalar(lambda * w[3]));
     }
 
     for (let i = 0; i < this.edge_constrains.length; i++) {
@@ -238,11 +230,22 @@ class SoftBodyObject {
       const [w0, w1] = [...this.edge_constrains[i]].map((edgeId) => this.invMasses[edgeId]);
       const x01 = new THREE.Vector3().subVectors(x1, x0);
       const l = x01.length();
-      const w = w0 + w1;
       const l0 = this.init_edge_lengths[i];
       x01.normalize();
-      x0.add(x01.clone().multiplyScalar((w1 / w) * (l - l0)));
-      x1.add(x01.clone().multiplyScalar(-(w0 / w) * (l - l0)));
+      const denom = w0 + w1 + alpha;
+      const lambda = (l - l0) / denom;
+      x0.add(x01.clone().multiplyScalar(lambda * w0));
+      x1.add(x01.clone().multiplyScalar(-lambda * w1));
+    }
+    
+    for (let i = 0; i < this.positions.length; i++) {
+      for (let k = 0; k < boundPositions.length; k++) {
+        const gap = new THREE.Vector3().subVectors(this.positions[i], boundPositions[k]).dot(boundNormals[k]);
+        if (gap < 0) {
+          this.positions[i].add(boundNormals[k].clone().multiplyScalar(-gap));
+          prev_positions[i].copy(this.positions[i]);
+        }
+      }
     }
 
     for (let i = 0; i < this.positions.length; i++) {
@@ -317,13 +320,13 @@ function mouseTrack() {
     else {
       grabbedPoint.copy(intersects[0].point);
       grabbed = intersects[0].object;
-      controls.enabled = false;
+      orbitControl.enabled = false;
     }
   });
 
   window.addEventListener("mouseup", () => {
     grabbed = null;
-    controls.enabled = true;
+    orbitControl.enabled = true;
   });
 }
 
@@ -354,37 +357,39 @@ function main() {
   }
 }
 
-function initGUI() {
-  const controls = {
-    debug: () => {
-      console.log(scene.children);
-    },
-    toggle: () => {
-      isPlaying = !isPlaying;
-    },
-    add: () => {
-      const object = new SoftBodyObject(bunnyData, scene);
-      object.move(5 * (0.5 - Math.random()), 1, 5 * (0.5 - Math.random()));
-      objects.push(object);
-    },
-    reset: () => {
-      for (let object of objects) {
-        object.mesh.geometry.dispose();
-        object.edges.geometry.dispose();
-        (object.mesh.material as THREE.Material).dispose();
-        (object.edges.material as THREE.Material).dispose();
-        scene.remove(object.mesh);
-        scene.remove(object.edges);
-      }
-      objects = [];
-    },
-  };
+const controls = {
+  debug: () => {
+    console.log(scene.children);
+  },
+  toggle: () => {
+    isPlaying = !isPlaying;
+  },
+  add: () => {
+    const object = new SoftBodyObject(bunnyData, scene);
+    object.move(5 * (0.5 - Math.random()), 1, 5 * (0.5 - Math.random()));
+    objects.push(object);
+  },
+  reset: () => {
+    for (let object of objects) {
+      object.mesh.geometry.dispose();
+      object.edges.geometry.dispose();
+      (object.mesh.material as THREE.Material).dispose();
+      (object.edges.material as THREE.Material).dispose();
+      scene.remove(object.mesh);
+      scene.remove(object.edges);
+    }
+    objects = [];
+  },
+  invStiffness: 0,
+};
 
+function initGUI() {
   const gui = new dat.GUI();
   gui.add(controls, "debug");
   gui.add(controls, "toggle").name("Pause / Unpause");
   gui.add(controls, "add");
   gui.add(controls, "reset");
+  gui.add(controls, "invStiffness", 0.0, 1.0).step(0.01);
 }
 
 function preventDefault() {
