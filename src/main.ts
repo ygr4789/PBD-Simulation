@@ -3,6 +3,8 @@ import * as Stats from "stats.js";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
+import "./style/style.css";
+
 const scene = new THREE.Scene();
 const setcolor = 0x000000;
 // const setcolor = 0xbbbbbb;
@@ -66,17 +68,7 @@ type parsedData = {
   tetEdgeIds: Array<number>; // the indices of vertices that form edges in two units.
   tetSurfaceTriIds: Array<number>; // the indices of vertices that form triangles of surface in three units.
 };
-let bunnyData: parsedData;
-
-async function loadBunny() {
-  await fetch("src/bunny.json")
-    .then((response) => {
-      return response.json();
-    })
-    .then((data) => {
-      bunnyData = data;
-    });
-}
+const bunnyData = require("./assets/bunny.json");
 
 // ===================== CLASS =====================
 
@@ -378,8 +370,7 @@ function preventDefault() {
   document.onselectstart = () => false;
 }
 
-window.onload = async () => {
-  await loadBunny();
+window.onload = () => {
   preventDefault();
   mouseTrack();
   initGUI();
