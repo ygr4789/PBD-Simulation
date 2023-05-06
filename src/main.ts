@@ -37,7 +37,7 @@ window.onresize = window_onsize;
 
 const dirLight = new THREE.DirectionalLight(0xffffff);
 dirLight.position.set(1, 1, 1);
-// dirLight.castShadow = true;
+dirLight.castShadow = true;
 scene.add(dirLight);
 
 const lightBack = new THREE.PointLight(0x0fffff, 1);
@@ -60,18 +60,6 @@ grid.position.set(0, 0.002, 0);
 
 scene.add(grid);
 scene.add(ground);
-
-// ===================== INIT =====================
-
-type parsedData = {
-  name: String;
-  verts: Array<number>; // vertex positions in three units.
-  tetIds: Array<number>; // the indices of vertices that form tetrahedrons in four units.
-  tetEdgeIds: Array<number>; // the indices of vertices that form edges in two units.
-  tetSurfaceTriIds: Array<number>; // the indices of vertices that form triangles of surface in three units.
-};
-const bunnyData = require("./assets/bunny.json");
-// const bunnyData = require("./assets/test.json");
 
 // ===================== BOUNDARY =====================
 
@@ -112,6 +100,8 @@ class SoftBodyObject {
   edge_constrains: Array<Array<number>>;
   init_edge_lengths: Array<number>;
 
+  isSurface: Array<boolean>;
+
   constructor(file: parsedData, _scene: THREE.Scene) {
     this.init_positions = file.verts;
     this.positions = [];
@@ -141,6 +131,9 @@ class SoftBodyObject {
     this.edges = new THREE.LineSegments(this.edge_geometry, new THREE.LineBasicMaterial({ color: 0xffffff }));
     _scene.add(this.edges);
 
+    this.isSurface = new Array(this.vertices.length).fill(false);
+    for (let id of file.tetSurfaceTriIds) this.isSurface[id] = true;
+
     // Constrains
 
     this.tet_constrains = [];
@@ -149,10 +142,10 @@ class SoftBodyObject {
     for (let i = 0; i < file.tetIds.length; i += 4) {
       this.tet_constrains.push([...file.tetIds.slice(i, i + 4)]);
       const [x0, x1, x2, x3] = [...this.tet_constrains[i / 4]].map((tetId) => this.positions[tetId]);
-      const x01 = new THREE.Vector3().subVectors(x1, x0);
-      const x02 = new THREE.Vector3().subVectors(x2, x0);
-      const x03 = new THREE.Vector3().subVectors(x3, x0);
-      this.init_tet_volumes.push(new THREE.Vector3().crossVectors(x01, x02).dot(x03) / 6);
+      const x01 = x1.clone().sub(x0);
+      const x02 = x2.clone().sub(x0);
+      const x03 = x3.clone().sub(x0);
+      this.init_tet_volumes.push(x01.clone().cross(x02).dot(x03) / 6);
       this.tet_constrains[i / 4].forEach((tetId) => {
         this.invMasses[tetId] += this.init_tet_volumes[i / 4] / 4;
       });
@@ -187,8 +180,6 @@ class SoftBodyObject {
   }
 
   update(dt: number) {
-    const alpha = controls.invStiffness / dt / dt;
-
     let prev_positions = this.positions.map((v) => v.clone());
     for (let i = 0; i < this.positions.length; i++) {
       this.velocities[i].add(new THREE.Vector3(0, -controls.gravity * dt, 0));
@@ -196,26 +187,34 @@ class SoftBodyObject {
     if (grabbed === this.mesh) this.grabInteract(dt);
 
     for (let i = 0; i < this.positions.length; i++) {
+      for (let k = 0; k < boundPositions.length; k++) {
+        const gap = new THREE.Vector3().subVectors(this.positions[i], boundPositions[k]).dot(boundNormals[k]);
+        if (gap < 0.01) {
+          this.velocities[i].multiplyScalar(1 - controls.friction);
+        }
+      }
+    }
+
+    for (let i = 0; i < this.positions.length; i++) {
       this.positions[i].add(this.velocities[i].clone().multiplyScalar(dt));
     }
 
+    const alpha = controls.invStiffness / dt ** 2;
     for (let n = 0; n < controls.NumSubSteps; n++) {
-      dt /= controls.NumSubSteps;
-
       for (let i = 0; i < this.tet_constrains.length; i++) {
         const [x0, x1, x2, x3] = [...this.tet_constrains[i]].map((tetId) => this.positions[tetId]);
         const w = [...this.tet_constrains[i]].map((tetId) => this.invMasses[tetId]);
-        const x01 = new THREE.Vector3().subVectors(x1, x0);
-        const x02 = new THREE.Vector3().subVectors(x2, x0);
-        const x03 = new THREE.Vector3().subVectors(x3, x0);
-        const x12 = new THREE.Vector3().subVectors(x1, x2);
-        const x13 = new THREE.Vector3().subVectors(x1, x3);
+        const x01 = x1.clone().sub(x0);
+        const x02 = x2.clone().sub(x0);
+        const x03 = x3.clone().sub(x0);
+        const x12 = x1.clone().sub(x2);
+        const x13 = x1.clone().sub(x3);
         const volume = new THREE.Vector3().crossVectors(x01, x02).dot(x03) / 6;
         const init_volume = this.init_tet_volumes[i];
-        const grad_x0_c = new THREE.Vector3().crossVectors(x13, x12);
-        const grad_x1_c = new THREE.Vector3().crossVectors(x02, x03);
-        const grad_x2_c = new THREE.Vector3().crossVectors(x03, x01);
-        const grad_x3_c = new THREE.Vector3().crossVectors(x01, x02);
+        const grad_x0_c = x13.clone().cross(x12);
+        const grad_x1_c = x02.clone().cross(x03);
+        const grad_x2_c = x03.clone().cross(x01);
+        const grad_x3_c = x01.clone().cross(x02);
         const denom = [grad_x0_c, grad_x1_c, grad_x2_c, grad_x3_c].reduce((prev, curr, k) => {
           return prev + w[k] * curr.length() ** 2;
         }, 0);
@@ -246,15 +245,59 @@ class SoftBodyObject {
           const gap = new THREE.Vector3().subVectors(this.positions[i], boundPositions[k]).dot(boundNormals[k]);
           if (gap < 0) {
             this.positions[i].add(boundNormals[k].clone().multiplyScalar(-gap));
-            prev_positions[i].copy(this.positions[i]);
+            // prev_positions[i].copy(this.positions[i]);
           }
         }
       }
-      dt *= controls.NumSubSteps;
+    }
+
+    for (let otherObj of objects) {
+      if (!controls.collisionCheck) break;
+      if (otherObj === this) continue;
+      for (let i = 0; i < this.positions.length; i++) {
+        if (!this.isSurface[i]) continue;
+        const q = this.positions[i];
+        for (let j = 0; j < otherObj.tet_constrains.length; j++) {
+          let isSurfaceTet = false;
+          const [p0, p1, p2, p3] = [...otherObj.tet_constrains[j]].map((tetId) => {
+            if (otherObj.isSurface[tetId]) isSurfaceTet = true;
+            return otherObj.positions[tetId];
+          });
+          if (!isSurfaceTet) continue;
+
+          const p0q = q.clone().sub(p0);
+          const p01 = p1.clone().sub(p0);
+          const p02 = p2.clone().sub(p0);
+          const p03 = p3.clone().sub(p0);
+          const M = new THREE.Matrix3();
+          M.setFromMatrix4(new THREE.Matrix4().makeBasis(p01, p02, p03));
+          if (M.determinant() === 0.0) break;
+          M.invert();
+          const w = p0q.clone().applyMatrix3(M);
+
+          let isInTet = true;
+          [1 - w.x - w.y - w.z, w.x, w.y, w.z].forEach((val) => {
+            if (val < 0) isInTet = false;
+          });
+          if (!isInTet) continue;
+
+          let sel = p0;
+          [...otherObj.tet_constrains[j]].forEach((tetId) => {
+            if (otherObj.isSurface[tetId]) {
+              const p = otherObj.positions[tetId];
+              const selDist = sel.distanceTo(q);
+              const newDist = p.distanceTo(q);
+              if (selDist > newDist) sel = p;
+            }
+          });
+          q.copy(sel);
+          break;
+        }
+      }
     }
 
     for (let i = 0; i < this.positions.length; i++) {
-      this.velocities[i] = new THREE.Vector3().subVectors(this.positions[i], prev_positions[i]).multiplyScalar(1.0 / dt);
+      this.velocities[i].subVectors(this.positions[i], prev_positions[i]).multiplyScalar(1.0 / dt);
     }
 
     this.renderUpdate();
@@ -286,7 +329,8 @@ class SoftBodyObject {
       }
     }
 
-    const grabDir = new THREE.Vector3().subVectors(currentPoint, this.positions[closestId]).normalize();
+    const grabDir = new THREE.Vector3();
+    grabDir.subVectors(currentPoint, this.positions[closestId]).normalize();
     this.velocities[closestId].add(grabDir.multiplyScalar(interaction * dt));
   }
 
@@ -335,6 +379,21 @@ function mouseTrack() {
   });
 }
 
+// ===================== DATA =====================
+
+type parsedData = {
+  name: String;
+  verts: Array<number>; // vertex positions in three units.
+  tetIds: Array<number>; // the indices of vertices that form tetrahedrons in four units.
+  tetEdgeIds: Array<number>; // the indices of vertices that form edges in two units.
+  tetSurfaceTriIds: Array<number>; // the indices of vertices that form triangles of surface in three units.
+};
+
+const bunnyData = require("./assets/bunny.json");
+const tetrahedronData = require("./assets/tetrahedron.json");
+let dataList = [bunnyData, tetrahedronData];
+let currentData = bunnyData;
+
 // ===================== MAIN =====================
 
 let objects: Array<SoftBodyObject> = [];
@@ -366,13 +425,13 @@ function main() {
 
 const controls = {
   debug: () => {
-    console.log(scene.children);
+    console.log(currentData);
   },
   toggle: () => {
     isPlaying = !isPlaying;
   },
   add: () => {
-    const object = new SoftBodyObject(bunnyData, scene);
+    const object = new SoftBodyObject(currentData, scene);
     object.move(5 * (0.5 - Math.random()), 1, 5 * (0.5 - Math.random()));
     objects.push(object);
   },
@@ -387,10 +446,13 @@ const controls = {
     }
     objects = [];
   },
-  gravity: 1,
+  gravity: 10,
   invStiffness: 50,
+  friction: 0.9,
   NumSubSteps: 10,
   TimeStepSize: 10,
+  collisionCheck: false,
+  data: 0,
 };
 
 function initGUI() {
@@ -400,9 +462,19 @@ function initGUI() {
   gui.add(controls, "add");
   gui.add(controls, "reset");
   gui.add(controls, "gravity", 0.0, 10.0).step(0.1);
+  gui.add(controls, "friction", 0.0, 2.0).step(0.01);
   gui.add(controls, "invStiffness", 0.0, 100.0).step(0.1);
   gui.add(controls, "NumSubSteps", 1, 50);
-  gui.add(controls, "TimeStepSize", 10, 1000).step(10);
+  gui.add(controls, "TimeStepSize", 10, 1000);
+  gui.add(controls, "collisionCheck");
+  gui
+    .add(controls, "data", {
+      bunny: 0,
+      tetrahedron: 1,
+    })
+    .onChange((id) => {
+      currentData = dataList[id]
+    });
 }
 
 function preventDefault() {
