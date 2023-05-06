@@ -9,7 +9,6 @@
     // "checkJs": true,
     // "declaration": true,
     // "sourceMap": true,
-    "resolveJsonModule": true,
 
     "removeComments": true,
 

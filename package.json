@@ -6,7 +6,7 @@
   "main": "dist/bundle.js",
   "scripts": {
     "start": "npm run build && npm run serve",
-    "test": "npm run watch && npm run serve",
+    "dev": "npm run watch & npm run serve",
     "serve": "webpack serve",
     "build": "webpack",
     "watch": "webpack -w",

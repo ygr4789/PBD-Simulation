@@ -46,12 +46,14 @@ scene.add(lightBack);
 
 // ================ Creating Ground ================
 
-const groundGeo = new THREE.PlaneGeometry(20, 20, 1, 1);
+const bound = 10.0;
+
+const groundGeo = new THREE.PlaneGeometry(2 * bound, 2 * bound, 1, 1);
 const groundMat = new THREE.MeshPhongMaterial({ color: 0xa0adaf, shininess: 155 });
 const ground = new THREE.Mesh(groundGeo, groundMat);
 ground.rotation.x = -Math.PI * 0.5;
 // ground.receiveShadow = true;
-const grid = new THREE.GridHelper(20, 20);
+const grid = new THREE.GridHelper(2 * bound, 2 * bound);
 (grid.material as THREE.Material).opacity = 1.0;
 (grid.material as THREE.Material).transparent = true;
 grid.position.set(0, 0.002, 0);
@@ -70,15 +72,35 @@ type parsedData = {
 };
 const bunnyData = require("./assets/bunny.json");
 
+// ===================== BOUNDARY =====================
+
+const boundPositions = [
+  new THREE.Vector3(0.0, 0.0, 0.0), // grond
+  new THREE.Vector3(bound, 0.0, 0.0), // maxX
+  new THREE.Vector3(-bound, 0.0, 0.0), // minX
+  new THREE.Vector3(0.0, 0.0, bound), // maxZ
+  new THREE.Vector3(0.0, 0.0, -bound), // minZ
+];
+const boundNormals = [
+  new THREE.Vector3(0.0, 1.0, 0.0), // grond
+  new THREE.Vector3(-1.0, 0.0, 0.0), // maxX
+  new THREE.Vector3(1.0, 0.0, 0.0), // minX
+  new THREE.Vector3(0.0, 0.0, -1.0), // maxZ
+  new THREE.Vector3(0.0, 0.0, 1.0), // minZ
+];
+
 // ===================== CLASS =====================
 
 class SoftBodyObject {
   init_positions: Array<number>;
   positions: Array<THREE.Vector3>;
   velocities: Array<THREE.Vector3>;
+  invMasses: Array<number>;
+
   vertices: Float32Array;
   indices: Uint16Array;
   edgeindices: Uint16Array;
+
   geometry: THREE.BufferGeometry;
   mesh: THREE.Mesh;
   edge_geometry: THREE.BufferGeometry;
@@ -90,7 +112,6 @@ class SoftBodyObject {
   init_edge_lengths: Array<number>;
 
   constructor(file: parsedData, _scene: THREE.Scene) {
-    // this.init_positions
     this.init_positions = file.verts;
     this.positions = [];
     this.velocities = [];
@@ -119,10 +140,11 @@ class SoftBodyObject {
     this.edges = new THREE.LineSegments(this.edge_geometry, new THREE.LineBasicMaterial({ color: 0xffffff }));
     _scene.add(this.edges);
 
-    // ===================== GENERATE CONSTRAINS =====================
+    // Constrains
 
     this.tet_constrains = [];
     this.init_tet_volumes = [];
+    this.invMasses = new Array(this.positions.length).fill(0);
     for (let i = 0; i < file.tetIds.length; i += 4) {
       this.tet_constrains.push([...file.tetIds.slice(i, i + 4)]);
       const [x0, x1, x2, x3] = [...this.tet_constrains[i / 4]].map((tetId) => this.positions[tetId]);
@@ -130,7 +152,13 @@ class SoftBodyObject {
       const x02 = new THREE.Vector3().subVectors(x2, x0);
       const x03 = new THREE.Vector3().subVectors(x3, x0);
       this.init_tet_volumes.push(new THREE.Vector3().crossVectors(x01, x02).dot(x03) / 6);
+      this.tet_constrains[i / 4].forEach((tetId) => {
+        this.invMasses[tetId] += this.init_tet_volumes[i / 4] / 4;
+      });
     }
+    this.invMasses.forEach((val, i, arr) => {
+      arr[i] = 1 / val;
+    });
 
     this.edge_constrains = [];
     this.init_edge_lengths = [];
@@ -159,8 +187,6 @@ class SoftBodyObject {
 
   update(dt: number) {
     const gravity = -9.8;
-    const restitution = 0.5;
-    // const friction = 1000;
 
     let prev_positions = this.positions.map((v) => v.clone());
     for (let i = 0; i < this.positions.length; i++) {
@@ -169,23 +195,23 @@ class SoftBodyObject {
     if (grabbed === this.mesh) this.grabInteract(dt);
 
     for (let i = 0; i < this.positions.length; i++) {
-      if (this.positions[i].y < 0.01) {
-        if (this.velocities[i].y < 0.0) {
-          this.velocities[i].setY(this.velocities[i].y * -restitution);
-        }
-        if (Math.abs(this.velocities[i].y) < 0.01) {
-          this.velocities[i].setY(0);
-          // this.velocities[i].multiplyScalar(1 - dt * friction);
+      this.positions[i].add(this.velocities[i].clone().multiplyScalar(dt));
+    }
+
+    for (let i = 0; i < this.positions.length; i++) {
+      for (let k = 0; k < boundPositions.length; k++) {
+        const gap = new THREE.Vector3().subVectors(this.positions[i], boundPositions[k]).dot(boundNormals[k]);
+        if (gap < 0) {
+          if (i == 0 && k == 0) console.log("det");
+          this.positions[i].add(boundNormals[k].clone().multiplyScalar(-gap));
+          prev_positions[i].copy(this.positions[i]);
         }
       }
     }
 
-    for (let i = 0; i < this.positions.length; i++) {
-      this.positions[i].add(this.velocities[i].clone().multiplyScalar(dt));
-    }
-
     for (let i = 0; i < this.tet_constrains.length; i++) {
       const [x0, x1, x2, x3] = [...this.tet_constrains[i]].map((tetId) => this.positions[tetId]);
+      const w = [...this.tet_constrains[i]].map((tetId) => this.invMasses[tetId]);
       const x01 = new THREE.Vector3().subVectors(x1, x0);
       const x02 = new THREE.Vector3().subVectors(x2, x0);
       const x03 = new THREE.Vector3().subVectors(x3, x0);
@@ -197,30 +223,26 @@ class SoftBodyObject {
       const grad_x1_c = new THREE.Vector3().crossVectors(x02, x03);
       const grad_x2_c = new THREE.Vector3().crossVectors(x03, x01);
       const grad_x3_c = new THREE.Vector3().crossVectors(x01, x02);
-      const denom = [grad_x0_c, grad_x1_c, grad_x2_c, grad_x3_c].reduce((prev, cur) => {
-        return prev + cur.length() ** 2;
+      const denom = [grad_x0_c, grad_x1_c, grad_x2_c, grad_x3_c].reduce((prev, cur, k) => {
+        return prev + w[k] * cur.length() ** 2;
       }, 0);
       const lambda = (-6 * (volume - init_volume)) / denom;
-      x0.add(grad_x0_c.multiplyScalar(lambda));
-      x1.add(grad_x1_c.multiplyScalar(lambda));
-      x2.add(grad_x2_c.multiplyScalar(lambda));
-      x3.add(grad_x3_c.multiplyScalar(lambda));
+      x0.add(grad_x0_c.multiplyScalar(lambda).multiplyScalar(w[0]));
+      x1.add(grad_x1_c.multiplyScalar(lambda).multiplyScalar(w[1]));
+      x2.add(grad_x2_c.multiplyScalar(lambda).multiplyScalar(w[2]));
+      x3.add(grad_x3_c.multiplyScalar(lambda).multiplyScalar(w[3]));
     }
 
     for (let i = 0; i < this.edge_constrains.length; i++) {
       const [x0, x1] = [...this.edge_constrains[i]].map((edgeId) => this.positions[edgeId]);
+      const [w0, w1] = [...this.edge_constrains[i]].map((edgeId) => this.invMasses[edgeId]);
       const x01 = new THREE.Vector3().subVectors(x1, x0);
       const l = x01.length();
+      const w = w0 + w1;
       const l0 = this.init_edge_lengths[i];
       x01.normalize();
-      x0.add(x01.clone().multiplyScalar(0.5 * (l - l0)));
-      x1.add(x01.clone().multiplyScalar(-0.5 * (l - l0)));
-    }
-
-    for (let i = 0; i < this.positions.length; i++) {
-      if (this.positions[i].y < 0.0) {
-        this.positions[i].setY(0);
-      }
+      x0.add(x01.clone().multiplyScalar((w1 / w) * (l - l0)));
+      x1.add(x01.clone().multiplyScalar(-(w0 / w) * (l - l0)));
     }
 
     for (let i = 0; i < this.positions.length; i++) {
@@ -342,7 +364,7 @@ function initGUI() {
     },
     add: () => {
       const object = new SoftBodyObject(bunnyData, scene);
-      object.move(5 * (0.5 - Math.random()), 0, 5 * (0.5 - Math.random()));
+      object.move(5 * (0.5 - Math.random()), 1, 5 * (0.5 - Math.random()));
       objects.push(object);
     },
     reset: () => {
