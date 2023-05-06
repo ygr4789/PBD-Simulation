@@ -187,12 +187,11 @@ class SoftBodyObject {
   }
 
   update(dt: number) {
-    const gravity = -9.8;
     const alpha = controls.invStiffness / dt / dt;
 
     let prev_positions = this.positions.map((v) => v.clone());
     for (let i = 0; i < this.positions.length; i++) {
-      this.velocities[i].add(new THREE.Vector3(0, gravity * dt, 0));
+      this.velocities[i].add(new THREE.Vector3(0, -controls.gravity * dt, 0));
     }
     if (grabbed === this.mesh) this.grabInteract(dt);
 
@@ -200,52 +199,58 @@ class SoftBodyObject {
       this.positions[i].add(this.velocities[i].clone().multiplyScalar(dt));
     }
 
-    for (let i = 0; i < this.tet_constrains.length; i++) {
-      const [x0, x1, x2, x3] = [...this.tet_constrains[i]].map((tetId) => this.positions[tetId]);
-      const w = [...this.tet_constrains[i]].map((tetId) => this.invMasses[tetId]);
-      const x01 = new THREE.Vector3().subVectors(x1, x0);
-      const x02 = new THREE.Vector3().subVectors(x2, x0);
-      const x03 = new THREE.Vector3().subVectors(x3, x0);
-      const x12 = new THREE.Vector3().subVectors(x1, x2);
-      const x13 = new THREE.Vector3().subVectors(x1, x3);
-      const grad_x0_c = new THREE.Vector3().crossVectors(x13, x12);
-      const grad_x1_c = new THREE.Vector3().crossVectors(x02, x03);
-      const grad_x2_c = new THREE.Vector3().crossVectors(x03, x01);
-      const grad_x3_c = new THREE.Vector3().crossVectors(x01, x02);
-      const denom =
-        [grad_x0_c, grad_x1_c, grad_x2_c, grad_x3_c].reduce((prev, curr, k) => {
-          return prev + w[k] * curr.length() ** 2;
-        }, 0) + alpha;
-      const volume = new THREE.Vector3().crossVectors(x01, x02).dot(x03) / 6;
-      const init_volume = this.init_tet_volumes[i];
-      const lambda = (-6 * (volume - init_volume)) / denom;
-      x0.add(grad_x0_c.multiplyScalar(lambda * w[0]));
-      x1.add(grad_x1_c.multiplyScalar(lambda * w[1]));
-      x2.add(grad_x2_c.multiplyScalar(lambda * w[2]));
-      x3.add(grad_x3_c.multiplyScalar(lambda * w[3]));
-    }
+    for (let n = 0; n < controls.NumSubSteps; n++) {
+      dt /= controls.NumSubSteps;
 
-    for (let i = 0; i < this.edge_constrains.length; i++) {
-      const [x0, x1] = [...this.edge_constrains[i]].map((edgeId) => this.positions[edgeId]);
-      const [w0, w1] = [...this.edge_constrains[i]].map((edgeId) => this.invMasses[edgeId]);
-      const x01 = new THREE.Vector3().subVectors(x1, x0);
-      const l = x01.length();
-      const l0 = this.init_edge_lengths[i];
-      x01.normalize();
-      const denom = w0 + w1 + alpha;
-      const lambda = (l - l0) / denom;
-      x0.add(x01.clone().multiplyScalar(lambda * w0));
-      x1.add(x01.clone().multiplyScalar(-lambda * w1));
-    }
-    
-    for (let i = 0; i < this.positions.length; i++) {
-      for (let k = 0; k < boundPositions.length; k++) {
-        const gap = new THREE.Vector3().subVectors(this.positions[i], boundPositions[k]).dot(boundNormals[k]);
-        if (gap < 0) {
-          this.positions[i].add(boundNormals[k].clone().multiplyScalar(-gap));
-          prev_positions[i].copy(this.positions[i]);
+      for (let i = 0; i < this.tet_constrains.length; i++) {
+        const [x0, x1, x2, x3] = [...this.tet_constrains[i]].map((tetId) => this.positions[tetId]);
+        const w = [...this.tet_constrains[i]].map((tetId) => this.invMasses[tetId]);
+        const x01 = new THREE.Vector3().subVectors(x1, x0);
+        const x02 = new THREE.Vector3().subVectors(x2, x0);
+        const x03 = new THREE.Vector3().subVectors(x3, x0);
+        const x12 = new THREE.Vector3().subVectors(x1, x2);
+        const x13 = new THREE.Vector3().subVectors(x1, x3);
+        const volume = new THREE.Vector3().crossVectors(x01, x02).dot(x03) / 6;
+        const init_volume = this.init_tet_volumes[i];
+        const grad_x0_c = new THREE.Vector3().crossVectors(x13, x12);
+        const grad_x1_c = new THREE.Vector3().crossVectors(x02, x03);
+        const grad_x2_c = new THREE.Vector3().crossVectors(x03, x01);
+        const grad_x3_c = new THREE.Vector3().crossVectors(x01, x02);
+        const denom = [grad_x0_c, grad_x1_c, grad_x2_c, grad_x3_c].reduce((prev, curr, k) => {
+          return prev + w[k] * curr.length() ** 2;
+        }, 0);
+        if (denom == 0.0) continue;
+        const lambda = (-6.0 * (volume - init_volume)) / denom;
+        x0.add(grad_x0_c.multiplyScalar(lambda * w[0]));
+        x1.add(grad_x1_c.multiplyScalar(lambda * w[1]));
+        x2.add(grad_x2_c.multiplyScalar(lambda * w[2]));
+        x3.add(grad_x3_c.multiplyScalar(lambda * w[3]));
+      }
+
+      for (let i = 0; i < this.edge_constrains.length; i++) {
+        const [x0, x1] = [...this.edge_constrains[i]].map((edgeId) => this.positions[edgeId]);
+        const [w0, w1] = [...this.edge_constrains[i]].map((edgeId) => this.invMasses[edgeId]);
+        const x01 = new THREE.Vector3().subVectors(x1, x0);
+        const l = x01.length();
+        const l0 = this.init_edge_lengths[i];
+        x01.normalize();
+        const denom = w0 + w1 + alpha;
+        if (denom == 0.0) continue;
+        const lambda = (l - l0) / denom;
+        x0.add(x01.clone().multiplyScalar(lambda * w0));
+        x1.add(x01.clone().multiplyScalar(-lambda * w1));
+      }
+
+      for (let i = 0; i < this.positions.length; i++) {
+        for (let k = 0; k < boundPositions.length; k++) {
+          const gap = new THREE.Vector3().subVectors(this.positions[i], boundPositions[k]).dot(boundNormals[k]);
+          if (gap < 0) {
+            this.positions[i].add(boundNormals[k].clone().multiplyScalar(-gap));
+            prev_positions[i].copy(this.positions[i]);
+          }
         }
       }
+      dt *= controls.NumSubSteps;
     }
 
     for (let i = 0; i < this.positions.length; i++) {
@@ -336,19 +341,21 @@ let objects: Array<SoftBodyObject> = [];
 let isPlaying: Boolean = false;
 
 function main() {
-  let prevTime = 0;
-  renderer.setAnimationLoop(animate);
+  let prevTime = new Date().getTime();
 
   const stats = new Stats();
   document.body.appendChild(stats.dom);
 
-  function animate(timestamp: number) {
-    let timediff = (timestamp - prevTime) / 1000;
+  animate();
+  function animate() {
+    let currTime = new Date().getTime();
+    let timediff = (currTime - prevTime) / 1000;
+    prevTime = currTime;
+    setTimeout(animate, controls.TimeStepSize);
     stats.begin();
     if (isPlaying) updateStates(timediff);
     renderer.render(scene, camera);
     stats.end();
-    prevTime = timestamp;
   }
   function updateStates(dt: number) {
     for (let object of objects) {
@@ -380,7 +387,10 @@ const controls = {
     }
     objects = [];
   },
-  invStiffness: 0,
+  gravity: 1,
+  invStiffness: 50,
+  NumSubSteps: 10,
+  TimeStepSize: 10,
 };
 
 function initGUI() {
@@ -389,7 +399,10 @@ function initGUI() {
   gui.add(controls, "toggle").name("Pause / Unpause");
   gui.add(controls, "add");
   gui.add(controls, "reset");
-  gui.add(controls, "invStiffness", 0.0, 1.0).step(0.01);
+  gui.add(controls, "gravity", 0.0, 10.0).step(0.1);
+  gui.add(controls, "invStiffness", 0.0, 100.0).step(0.1);
+  gui.add(controls, "NumSubSteps", 1, 50);
+  gui.add(controls, "TimeStepSize", 10, 1000).step(10);
 }
 
 function preventDefault() {
