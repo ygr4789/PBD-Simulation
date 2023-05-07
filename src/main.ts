@@ -290,6 +290,7 @@ class SoftBodyObject {
               if (selDist > newDist) sel = p;
             }
           });
+          console.log("Contacted");
           q.copy(sel);
           break;
         }
@@ -317,7 +318,8 @@ class SoftBodyObject {
   }
 
   grabInteract(dt: number) {
-    const interaction = 1000;
+    const grabTension = 1;
+    const grabDamping = 1;
 
     let closestId = -1;
     let closestDist = 1e9;
@@ -330,8 +332,12 @@ class SoftBodyObject {
     }
 
     const grabDir = new THREE.Vector3();
-    grabDir.subVectors(currentPoint, this.positions[closestId]).normalize();
-    this.velocities[closestId].add(grabDir.multiplyScalar(interaction * dt));
+    grabDir.subVectors(currentPoint, this.positions[closestId]);
+    const grabLen = grabDir.length();
+    grabDir.normalize();
+    const projVel = this.velocities[closestId].dot(grabDir);
+    const grabForce = grabLen * grabTension - projVel * grabDamping;
+    this.velocities[closestId].add(grabDir.multiplyScalar(grabForce * this.invMasses[closestId] * dt));
   }
 
   move(x: number, y: number, z: number) {
