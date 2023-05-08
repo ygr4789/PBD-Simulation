@@ -78,7 +78,7 @@ const boundNormals = [
   new THREE.Vector3(0.0, 0.0, 1.0), // minZ
 ];
 
-// ===================== CLASS =====================
+// ===================== SOFTBODY =====================
 
 class SoftBodyObject {
   init_positions: Array<number>;
@@ -395,9 +395,12 @@ type parsedData = {
   tetSurfaceTriIds: Array<number>; // the indices of vertices that form triangles of surface in three units.
 };
 
-const bunnyData = require("./assets/bunny.json");
-const tetrahedronData = require("./assets/tetrahedron.json");
-let dataList = [bunnyData, tetrahedronData];
+const tetrahedronData = require("./models/data/Tetrahedron.json");
+const bunnyData = require("./models/data/Bunny.json");
+const eggData = require("./models/data/Egg_.json");
+const bearData = require("./models/data/Bear_.json");
+const heartData = require("./models/data/Heart_.json");
+let dataList = [bunnyData, tetrahedronData, eggData, bearData, heartData];
 let currentData = bunnyData;
 
 // ===================== MAIN =====================
@@ -431,7 +434,7 @@ function main() {
 
 const controls = {
   debug: () => {
-    console.log(currentData);
+    // console.log(files);
   },
   toggle: () => {
     isPlaying = !isPlaying;
@@ -475,11 +478,14 @@ function initGUI() {
   gui.add(controls, "collisionCheck");
   gui
     .add(controls, "data", {
-      bunny: 0,
-      tetrahedron: 1,
+      Tetrahedron: 1,
+      Bunny: 0,
+      Egg: 2,
+      Bear: 3,
+      Heart: 4,
     })
     .onChange((id) => {
-      currentData = dataList[id]
+      currentData = dataList[id];
     });
 }
 
