@@ -170,13 +170,13 @@ class SoftBodyObject {
       this.vertices[i * 3 + 2] = this.positions[i].z;
     }
 
-    this.mesh.geometry.computeVertexNormals();
-    this.mesh.geometry.attributes.position.needsUpdate = true;
-    this.mesh.geometry.computeBoundingSphere();
+    this.geometry.computeVertexNormals();
+    this.geometry.attributes.position.needsUpdate = true;
+    this.geometry.computeBoundingSphere();
 
-    this.edges.geometry.computeVertexNormals();
-    this.edges.geometry.attributes.position.needsUpdate = true;
-    this.edges.geometry.computeBoundingSphere();
+    this.edge_geometry.computeVertexNormals();
+    this.edge_geometry.attributes.position.needsUpdate = true;
+    this.edge_geometry.computeBoundingSphere();
   }
 
   update(dt: number) {
@@ -344,6 +344,62 @@ class SoftBodyObject {
     for (let p of this.positions) {
       p.add(new THREE.Vector3(x, y, z));
     }
+    this.renderUpdate();
+  }
+}
+
+// ===================== RIGIDSPHERE =====================
+
+class RigidSphere {
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
+  invMass: number;
+  mesh: THREE.Mesh;
+
+  isSurface: Array<boolean>;
+
+  constructor(_scene: THREE.Scene) {
+    this.position = new THREE.Vector3();
+    this.velocity = new THREE.Vector3();
+
+    const sphereGeo = new THREE.SphereGeometry(1);
+    const sphereMat = new THREE.MeshPhongMaterial({ color: 0x00f00f, flatShading: true });
+    const mesh = new THREE.Mesh(sphereGeo, sphereMat);
+    _scene.add(this.mesh);
+  }
+
+  renderUpdate() {
+    this.mesh.position.copy(this.position);
+  }
+
+  update(dt: number) {
+    // needs to implement
+    this.renderUpdate();
+  }
+
+  reset() {
+    this.position = new THREE.Vector3();
+    this.velocity = new THREE.Vector3();
+    this.renderUpdate();
+  }
+
+  grabInteract(dt: number) {
+    const grabTension = 1;
+    const grabDamping = 1;
+
+    let dist = this.position.distanceTo(grabbedPoint);
+
+    const grabDir = new THREE.Vector3();
+    grabDir.subVectors(currentPoint, this.position);
+    const grabLen = grabDir.length();
+    grabDir.normalize();
+    const projVel = this.velocity.dot(grabDir);
+    const grabForce = grabLen * grabTension - projVel * grabDamping;
+    this.velocity.add(grabDir.multiplyScalar(grabForce * this.invMass * dt));
+  }
+
+  move(x: number, y: number, z: number) {
+    this.position.add(new THREE.Vector3(x, y, z));
     this.renderUpdate();
   }
 }
