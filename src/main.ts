@@ -1,6 +1,7 @@
 import * as dat from "dat.gui";
 import * as Stats from "stats.js";
 import * as THREE from "three";
+import { Vector3 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import "./style/style.css";
@@ -355,16 +356,17 @@ class RigidSphere {
   velocity: THREE.Vector3;
   invMass: number;
   mesh: THREE.Mesh;
-
-  isSurface: Array<boolean>;
+  radius: number;
 
   constructor(_scene: THREE.Scene) {
     this.position = new THREE.Vector3();
     this.velocity = new THREE.Vector3();
+    this.radius = 1;
+    this.invMass = 10;
 
-    const sphereGeo = new THREE.SphereGeometry(1);
-    const sphereMat = new THREE.MeshPhongMaterial({ color: 0x00f00f, flatShading: true });
-    const mesh = new THREE.Mesh(sphereGeo, sphereMat);
+    const sphereGeo = new THREE.SphereGeometry(this.radius);
+    const sphereMat = new THREE.MeshPhongMaterial({ color: 0x00f00f });
+    this.mesh = new THREE.Mesh(sphereGeo, sphereMat);
     _scene.add(this.mesh);
   }
 
@@ -374,6 +376,41 @@ class RigidSphere {
 
   update(dt: number) {
     // needs to implement
+    const restitution = 0.5;
+
+    this.velocity.add(new THREE.Vector3(0, -controls.gravity * dt, 0));
+    if (grabbed === this.mesh) this.grabInteract(dt);
+
+    this.position.add(this.velocity.clone().multiplyScalar(dt));
+
+    for (let k = 0; k < boundPositions.length; k++) {
+      const gap = this.position.clone().sub(boundPositions[k]).dot(boundNormals[k]) - this.radius;
+      const proj = this.velocity.dot(boundNormals[k]);
+      if (gap < 0.01 && proj < 0) {
+        this.velocity.add(boundNormals[k].clone().multiplyScalar(-proj * (1 + restitution)));
+      }
+    }
+
+    for (let other of spheres) {
+      if (other === this) continue;
+      const dir = this.position.clone().sub(other.position);
+      const gap = dir.length() - this.radius - other.radius;
+      const relProj = dir.dot(this.velocity.clone().sub(other.velocity));
+      dir.normalize();
+      if (gap < 0.01 && relProj < 0) {
+        this.velocity.add(dir.clone().multiplyScalar(-relProj * restitution));
+        other.velocity.add(dir.clone().multiplyScalar(relProj * restitution));
+        this.position.add(dir.clone().multiplyScalar(-gap));
+      }
+    }
+
+    for (let k = 0; k < boundPositions.length; k++) {
+      const gap = this.position.clone().sub(boundPositions[k]).dot(boundNormals[k]) - this.radius;
+      if (gap < 0) {
+        this.position.add(boundNormals[k].clone().multiplyScalar(-gap));
+      }
+    }
+
     this.renderUpdate();
   }
 
@@ -386,8 +423,6 @@ class RigidSphere {
   grabInteract(dt: number) {
     const grabTension = 1;
     const grabDamping = 1;
-
-    let dist = this.position.distanceTo(grabbedPoint);
 
     const grabDir = new THREE.Vector3();
     grabDir.subVectors(currentPoint, this.position);
@@ -426,7 +461,7 @@ function mouseTrack() {
   });
 
   window.addEventListener("mousedown", () => {
-    const intersects = raycaster.intersectObjects(objects.map((obj) => obj.mesh));
+    const intersects = raycaster.intersectObjects([...objects, ...spheres].map((obj) => obj.mesh));
     if (intersects.length === 0) grabbed = null;
     else {
       grabbedPoint.copy(intersects[0].point);
@@ -462,6 +497,7 @@ let currentData = bunnyData;
 // ===================== MAIN =====================
 
 let objects: Array<SoftBodyObject> = [];
+let spheres: Array<RigidSphere> = [];
 let isPlaying: Boolean = false;
 
 function main() {
@@ -485,6 +521,9 @@ function main() {
     for (let object of objects) {
       object.update(dt);
     }
+    for (let sphere of spheres) {
+      sphere.update(dt);
+    }
   }
 }
 
@@ -496,9 +535,15 @@ const controls = {
     isPlaying = !isPlaying;
   },
   add: () => {
-    const object = new SoftBodyObject(currentData, scene);
-    object.move(5 * (0.5 - Math.random()), 1, 5 * (0.5 - Math.random()));
-    objects.push(object);
+    if (!controls.addSphere) {
+      const object = new SoftBodyObject(currentData, scene);
+      object.move(5 * (0.5 - Math.random()), 1, 5 * (0.5 - Math.random()));
+      objects.push(object);
+    } else {
+      const sphere = new RigidSphere(scene);
+      sphere.move(5 * (0.5 - Math.random()), 5, 5 * (0.5 - Math.random()));
+      spheres.push(sphere);
+    }
   },
   reset: () => {
     for (let object of objects) {
@@ -510,6 +555,13 @@ const controls = {
       scene.remove(object.edges);
     }
     objects = [];
+
+    for (let sphere of spheres) {
+      sphere.mesh.geometry.dispose();
+      (sphere.mesh.material as THREE.Material).dispose();
+      scene.remove(sphere.mesh);
+    }
+    spheres = [];
   },
   gravity: 10,
   invStiffness: 50,
@@ -517,6 +569,7 @@ const controls = {
   NumSubSteps: 10,
   TimeStepSize: 10,
   collisionCheck: false,
+  addSphere: false,
   data: 0,
 };
 
@@ -532,6 +585,7 @@ function initGUI() {
   gui.add(controls, "NumSubSteps", 1, 50);
   gui.add(controls, "TimeStepSize", 10, 1000);
   gui.add(controls, "collisionCheck");
+  gui.add(controls, "addSphere");
   gui
     .add(controls, "data", {
       Tetrahedron: 1,
