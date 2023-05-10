@@ -1,7 +1,6 @@
 import * as dat from "dat.gui";
 import * as Stats from "stats.js";
 import * as THREE from "three";
-import { Vector3 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import "./style/style.css";
@@ -259,13 +258,17 @@ class SoftBodyObject {
       for (let i = 0; i < this.positions.length; i++) {
         if (!this.isSurface[i]) continue;
         const q = this.positions[i];
+        let thisMass = 1 / this.invMasses[i];
         for (let j = 0; j < otherObj.tet_constrains.length; j++) {
-          let isSurfaceTet = false;
+          let surfacePoints: Array<THREE.Vector3> = [];
+          let otherTetMass = 0;
           const [p0, p1, p2, p3] = [...otherObj.tet_constrains[j]].map((tetId) => {
-            if (otherObj.isSurface[tetId]) isSurfaceTet = true;
-            return otherObj.positions[tetId];
+            const p = otherObj.positions[tetId];
+            if (otherObj.isSurface[tetId]) surfacePoints.push(p);
+            otherTetMass += 1 / otherObj.invMasses[tetId];
+            return p;
           });
-          if (!isSurfaceTet) continue;
+          if (surfacePoints.length === 0) continue;
 
           const p0q = q.clone().sub(p0);
           const p01 = p1.clone().sub(p0);
@@ -283,17 +286,29 @@ class SoftBodyObject {
           });
           if (!isInTet) continue;
 
-          let sel = p0;
-          [...otherObj.tet_constrains[j]].forEach((tetId) => {
-            if (otherObj.isSurface[tetId]) {
-              const p = otherObj.positions[tetId];
-              const selDist = sel.distanceTo(q);
-              const newDist = p.distanceTo(q);
-              if (selDist > newDist) sel = p;
-            }
-          });
-          console.log("Contacted");
-          q.copy(sel);
+          const [s0, s1, s2] = [...surfacePoints];
+          const vert = new THREE.Vector3();
+
+          switch (surfacePoints.length) {
+            case 1:
+              vert.subVectors(s0, q);
+              break;
+            case 2:
+              const s0q = q.clone().sub(s0);
+              vert.subVectors(s1, s0).normalize();
+              vert.multiplyScalar(vert.dot(s0q)).sub(s0q);
+              break;
+            default:
+              const s01 = s1.clone().sub(s0);
+              const s02 = s2.clone().sub(s1);
+              const qs0 = s0.clone().sub(q);
+              vert.crossVectors(s02, s01).normalize();
+              vert.multiplyScalar(vert.dot(qs0));
+              break;
+          }
+          let totMass = thisMass + otherTetMass;
+          [p0, p1, p2, p3].forEach((p) => p.sub(vert.clone().multiplyScalar(thisMass / totMass)));
+          q.add(vert.clone().multiplyScalar(otherTetMass / totMass));
           break;
         }
       }
@@ -520,7 +535,7 @@ function main() {
   }
   function updateStates(dt: number) {
     for (let object of objects) {
-      object.update(dt);
+      object.update(0.01);
     }
     for (let sphere of spheres) {
       sphere.update(dt);
