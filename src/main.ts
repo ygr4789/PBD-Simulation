@@ -189,7 +189,7 @@ class SoftBodyObject {
 
     for (let i = 0; i < this.positions.length; i++) {
       for (let k = 0; k < boundPositions.length; k++) {
-        const gap = new THREE.Vector3().subVectors(this.positions[i], boundPositions[k]).dot(boundNormals[k]);
+        const gap = this.positions[i].clone().sub(boundPositions[k]).dot(boundNormals[k]);
         if (gap < 0.01) {
           this.velocities[i].multiplyScalar(1 - controls.friction);
         }
@@ -216,9 +216,10 @@ class SoftBodyObject {
         const grad_x1_c = x02.clone().cross(x03);
         const grad_x2_c = x03.clone().cross(x01);
         const grad_x3_c = x01.clone().cross(x02);
-        const denom = [grad_x0_c, grad_x1_c, grad_x2_c, grad_x3_c].reduce((prev, curr, k) => {
-          return prev + w[k] * curr.length() ** 2;
-        }, 0);
+        const denom =
+          [grad_x0_c, grad_x1_c, grad_x2_c, grad_x3_c].reduce((prev, curr, k) => {
+            return prev + w[k] * curr.length() ** 2;
+          }, 0) + 1;
         if (denom == 0.0) continue;
         const lambda = (-6.0 * (volume - init_volume)) / denom;
         x0.add(grad_x0_c.multiplyScalar(lambda * w[0]));
@@ -230,7 +231,7 @@ class SoftBodyObject {
       for (let i = 0; i < this.edge_constrains.length; i++) {
         const [x0, x1] = [...this.edge_constrains[i]].map((edgeId) => this.positions[edgeId]);
         const [w0, w1] = [...this.edge_constrains[i]].map((edgeId) => this.invMasses[edgeId]);
-        const x01 = new THREE.Vector3().subVectors(x1, x0);
+        const x01 = x1.clone().sub(x0);
         const l = x01.length();
         const l0 = this.init_edge_lengths[i];
         x01.normalize();
@@ -243,7 +244,7 @@ class SoftBodyObject {
 
       for (let i = 0; i < this.positions.length; i++) {
         for (let k = 0; k < boundPositions.length; k++) {
-          const gap = new THREE.Vector3().subVectors(this.positions[i], boundPositions[k]).dot(boundNormals[k]);
+          const gap = this.positions[i].clone().sub(boundPositions[k]).dot(boundNormals[k]);
           if (gap < 0) {
             this.positions[i].add(boundNormals[k].clone().multiplyScalar(-gap));
             // prev_positions[i].copy(this.positions[i]);
@@ -361,8 +362,8 @@ class RigidSphere {
   constructor(_scene: THREE.Scene) {
     this.position = new THREE.Vector3();
     this.velocity = new THREE.Vector3();
-    this.radius = 1;
-    this.invMass = 10;
+    this.radius = controls.radius;
+    this.invMass = 1 / this.radius ** 2;
 
     const sphereGeo = new THREE.SphereGeometry(this.radius);
     const sphereMat = new THREE.MeshPhongMaterial({ color: 0x00f00f });
@@ -570,6 +571,7 @@ const controls = {
   TimeStepSize: 10,
   collisionCheck: false,
   addSphere: false,
+  radius: 0.5,
   data: 0,
 };
 
@@ -586,6 +588,7 @@ function initGUI() {
   gui.add(controls, "TimeStepSize", 10, 1000);
   gui.add(controls, "collisionCheck");
   gui.add(controls, "addSphere");
+  gui.add(controls, "radius", 0.1, 1).step(0.1);
   gui
     .add(controls, "data", {
       Tetrahedron: 1,
