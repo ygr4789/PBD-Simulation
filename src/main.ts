@@ -4,11 +4,12 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { SpatialHash } from "./hash";
 
+import { plotPoint, cleanPoint, emphasizePoint } from "./debug"
+
 import "./style/style.css";
 
 const scene = new THREE.Scene();
 const setcolor = 0x000000;
-// const setcolor = 0xbbbbbb;
 scene.background = new THREE.Color(setcolor);
 
 const renderer = new THREE.WebGLRenderer({
@@ -109,7 +110,7 @@ class SoftBodyObject {
     this.init_positions = file.verts;
     this.positions = [];
     this.velocities = [];
-    this.spatial_hash = new SpatialHash(0.1, 10000, this.positions.length);
+    this.spatial_hash = new SpatialHash(hashSpacing, hashSize, this.positions.length);
 
     for (let i = 0; i < this.init_positions.length; i += 3) {
       this.positions.push(new THREE.Vector3(...this.init_positions.slice(i, i + 3)));
@@ -150,7 +151,7 @@ class SoftBodyObject {
     for (let i = 0; i < file.tetIds.length; i += 4) {
       this.tet_constrains.push([...file.tetIds.slice(i, i + 4)]);
       const [x0, x1, x2, x3] = [...this.tet_constrains[i / 4]].map((tetId) => {
-        this.id_to_tet[tetId].push(i);
+        this.id_to_tet[tetId].push(i / 4);
         return this.positions[tetId];
       });
       const x01 = x1.clone().sub(x0);
@@ -257,97 +258,86 @@ class SoftBodyObject {
           const gap = this.positions[i].clone().sub(boundPositions[k]).dot(boundNormals[k]);
           if (gap < 0) {
             this.positions[i].add(boundNormals[k].clone().multiplyScalar(-gap));
-            // prev_positions[i].copy(this.positions[i]);
           }
         }
       }
     }
 
-    for (let otherObj of objects) {
-      this.spatial_hash.update(otherObj.positions);
-      if (!controls.collisionCheck) break;
-      if (otherObj === this) continue;
-      for (let i = 0; i < this.positions.length; i++) {
-        if (!this.isSurface[i]) continue;
-        const q = this.positions[i];
-        const closeIds = this.spatial_hash.query(q, 0.1);
-        let thisMass = 1 / this.invMasses[i];
+    for (let n = 0; n < controls.NumSubSteps; n++) {
 
-        // if (closeIds.includes(undefined)) console.log(closeIds);
-        // const constIds = closeIds.reduce((prev, curr) => {
-        //   return [...prev, ...this.id_to_tet[curr]];
-        // }, []);
+      for (let otherObj of objects) {
+        this.spatial_hash.update(otherObj.positions);
+        if (!controls.collisionCheck) break;
+        if (otherObj === this) continue;
+        for (let i = 0; i < this.positions.length; i++) {
+          if (!this.isSurface[i]) continue;
+          const q = this.positions[i];
 
-        for (let j = 0; j < otherObj.tet_constrains.length; j++) {
-          let surfacePoints: Array<THREE.Vector3> = [];
-          let otherTetMass = 0;
-          const [p0, p1, p2, p3] = [...otherObj.tet_constrains[j]].map((tetId) => {
-            const p = otherObj.positions[tetId];
-            if (otherObj.isSurface[tetId]) surfacePoints.push(p);
-            otherTetMass += 1 / otherObj.invMasses[tetId];
-            return p;
-          });
-          if (surfacePoints.length === 0) continue;
+          const closeIds = this.spatial_hash.query(q, hashSpacing);
+          let thisMass = 1 / this.invMasses[i];
 
-          const p0q = q.clone().sub(p0);
-          const p01 = p1.clone().sub(p0);
-          const p02 = p2.clone().sub(p0);
-          const p03 = p3.clone().sub(p0);
-          const M = new THREE.Matrix3();
-          M.setFromMatrix4(new THREE.Matrix4().makeBasis(p01, p02, p03));
-          if (M.determinant() === 0.0) break;
-          M.invert();
-          const w = p0q.clone().applyMatrix3(M);
+          const constIds = closeIds.reduce((prev, curr) => {
+            return [...prev, ...this.id_to_tet[curr]];
+          }, []);
 
-          let isInTet = true;
-          [1 - w.x - w.y - w.z, w.x, w.y, w.z].forEach((val) => {
-            if (val < 0) isInTet = false;
-          });
-          if (!isInTet) continue;
+          constIds.forEach((j) => {
+            let surfacePoints: Array<THREE.Vector3> = [];
+            let otherTetMass = 0;
+            const [p0, p1, p2, p3] = [...otherObj.tet_constrains[j]].map((tetId) => {
+              const p = otherObj.positions[tetId];
+              if (otherObj.isSurface[tetId]) surfacePoints.push(p);
+              otherTetMass += 1 / otherObj.invMasses[tetId];
+              return p;
+            });
+            if (surfacePoints.length === 0) return;
 
-          const [s0, s1, s2] = [...surfacePoints];
-          const vert = new THREE.Vector3();
+            const p0q = q.clone().sub(p0);
+            const p01 = p1.clone().sub(p0);
+            const p02 = p2.clone().sub(p0);
+            const p03 = p3.clone().sub(p0);
+            const M = new THREE.Matrix3();
+            M.setFromMatrix4(new THREE.Matrix4().makeBasis(p01, p02, p03));
+            if (M.determinant() === 0.0) return;
+            M.invert();
+            const w = p0q.clone().applyMatrix3(M);
 
-          switch (surfacePoints.length) {
-            case 1:
-              vert.subVectors(s0, q);
-              break;
-            case 2:
-              const s0q = q.clone().sub(s0);
-              vert.subVectors(s1, s0).normalize();
-              vert.multiplyScalar(vert.dot(s0q)).sub(s0q);
-              break;
-            default:
-              const s01 = s1.clone().sub(s0);
-              const s02 = s2.clone().sub(s1);
-              const qs0 = s0.clone().sub(q);
-              vert.crossVectors(s02, s01).normalize();
-              vert.multiplyScalar(vert.dot(qs0));
-              break;
-          }
-          let totMass = thisMass + otherTetMass;
-          [p0, p1, p2, p3].forEach((p) => p.sub(vert.clone().multiplyScalar(thisMass / totMass)));
-          q.add(vert.clone().multiplyScalar(otherTetMass / totMass));
-          break;
+            let isInTet = true;
+            [1 - w.x - w.y - w.z, w.x, w.y, w.z].forEach((val) => {
+              if (val < 0) isInTet = false;
+            });
+            if (!isInTet) return;
+
+            const [s0, s1, s2] = [...surfacePoints];
+            const vert = new THREE.Vector3();
+
+            switch (surfacePoints.length) {
+              case 1:
+                vert.subVectors(s0, q);
+                break;
+              case 2:
+                const s0q = q.clone().sub(s0);
+                vert.subVectors(s1, s0).normalize();
+                vert.multiplyScalar(vert.dot(s0q)).sub(s0q);
+                break;
+              default:
+                const s01 = s1.clone().sub(s0);
+                const s02 = s2.clone().sub(s1);
+                const qs0 = s0.clone().sub(q);
+                vert.crossVectors(s02, s01).normalize();
+                vert.multiplyScalar(vert.dot(qs0));
+                break;
+            }
+            let totMass = thisMass + otherTetMass;
+            [p0, p1, p2, p3].forEach((p) => p.sub(vert.clone().multiplyScalar(thisMass / totMass)));
+            q.add(vert.clone().multiplyScalar(otherTetMass / totMass));
+            return;
+          })
         }
       }
     }
 
     for (let i = 0; i < this.positions.length; i++) {
       this.velocities[i].subVectors(this.positions[i], prev_positions[i]).multiplyScalar(1.0 / dt);
-    }
-
-    this.renderUpdate();
-  }
-
-  reset() {
-    // Bunny Reset
-    this.positions = [];
-    this.velocities = [];
-
-    for (let i = 0; i < this.vertices.length / 3; i++) {
-      this.positions.push(new THREE.Vector3(this.init_positions[3 * i], this.init_positions[3 * i + 1], this.init_positions[3 * i + 2]));
-      this.velocities.push(new THREE.Vector3(0, 0, 0));
     }
 
     this.renderUpdate();
@@ -411,7 +401,6 @@ class RigidSphere {
   }
 
   update(dt: number) {
-    // needs to implement
     const restitution = 0.5;
 
     this.velocity.add(new THREE.Vector3(0, -controls.gravity * dt, 0));
@@ -565,9 +554,10 @@ function main() {
   }
 }
 
+const hashSpacing = 0.05;
+const hashSize = 5000;
 const controls = {
   debug: () => {
-    // console.log(files);
   },
   toggle: () => {
     isPlaying = !isPlaying;

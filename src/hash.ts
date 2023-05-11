@@ -15,8 +15,12 @@ export class SpatialHash {
     this.particleTable = Array(this.numParticles);
   }
 
-  hash(v: Vector3) {
+  hashVec(v: Vector3) {
     let h = (this.index(v.x) * 92837111) ^ (this.index(v.y) * 689287499) ^ (this.index(v.z) * 283923481);
+    return Math.abs(h) % this.tableSize;
+  }
+  hash(x: number, y: number, z: number) {
+    let h = (x * 92837111) ^ (y * 689287499) ^ (z * 283923481);
     return Math.abs(h) % this.tableSize;
   }
 
@@ -29,13 +33,13 @@ export class SpatialHash {
     this.countTable.fill(0);
     
     for (let i = 0; i < this.numParticles; i++) {
-      this.countTable[this.hash(positions[i])]++;
+      this.countTable[this.hashVec(positions[i])]++;
     }
     for (let i = 0; i < this.tableSize; i++) {
       this.countTable[i + 1] += this.countTable[i];
     }
     for (let i = 0; i < this.numParticles; i++) {
-      this.particleTable[this.countTable[this.hash(positions[i])]--] = i;
+      this.particleTable[--this.countTable[this.hashVec(positions[i])]] = i;
     }
   }
 
@@ -48,11 +52,11 @@ export class SpatialHash {
     let yMax = this.index(v.y + dist);
     let zMax = this.index(v.z + dist);
 
-    let ret: Array<number | undefined> = [];
+    let ret: Array<number> = [];
     for (let x = xMin; x <= xMax; x++) {
       for (let y = yMin; y <= yMax; y++) {
         for (let z = zMin; z <= zMax; z++) {
-          let h = this.hash(new Vector3(x, y, z));
+          let h = this.hash(x, y, z);
           let begin = this.countTable[h];
           let end = this.countTable[h + 1];
           for (let k = begin; k < end; k++) {
