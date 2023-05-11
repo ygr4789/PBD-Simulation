@@ -9,13 +9,15 @@ import { plotPoint, cleanPoint, emphasizePoint } from "./debug"
 import "./style/style.css";
 
 const scene = new THREE.Scene();
-const setcolor = 0x000000;
+const setcolor = 0xa0a0e0;
 scene.background = new THREE.Color(setcolor);
 
 const renderer = new THREE.WebGLRenderer({
   antialias: true,
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000.0);
@@ -34,33 +36,29 @@ window.onresize = window_onsize;
 
 // ================ Light setting ================
 
-// const ambientLight = new THREE.AmbientLight(0xaaaaaa);
-// scene.add(ambientLight);
+const ambientLight = new THREE.AmbientLight(0x9090a0, 1.0);
+scene.add(ambientLight);
 
-const dirLight = new THREE.DirectionalLight(0xffffff);
-dirLight.position.set(1, 1, 1);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+dirLight.position.set(30, 30, 0);
 dirLight.castShadow = true;
 scene.add(dirLight);
 
-const lightBack = new THREE.PointLight(0x0fffff, 1);
-lightBack.position.set(0, -3, -1);
-scene.add(lightBack);
-
 // ================ Creating Ground ================
 
-const bound = 10.0;
+const bound = 5.0;
 
 const groundGeo = new THREE.PlaneGeometry(2 * bound, 2 * bound, 1, 1);
-const groundMat = new THREE.MeshPhongMaterial({ color: 0xa0adaf, shininess: 155 });
+const groundMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 155, side: THREE.DoubleSide });
 const ground = new THREE.Mesh(groundGeo, groundMat);
 ground.rotation.x = -Math.PI * 0.5;
-// ground.receiveShadow = true;
+ground.receiveShadow = true;
 const grid = new THREE.GridHelper(2 * bound, 2 * bound);
 (grid.material as THREE.Material).opacity = 1.0;
 (grid.material as THREE.Material).transparent = true;
 grid.position.set(0, 0.002, 0);
 
-scene.add(grid);
+// scene.add(grid);
 scene.add(ground);
 
 // ===================== BOUNDARY =====================
@@ -125,10 +123,12 @@ class SoftBodyObject {
     this.geometry.setIndex(new THREE.BufferAttribute(this.indices, 1));
     this.geometry.setAttribute("position", new THREE.BufferAttribute(this.vertices, 3));
 
-    // this.mesh = new THREE.Mesh(this.geometry, new THREE.MeshPhongMaterial({ color: 0x00f00f, flatShading: true }));
     const color = new THREE.Color(Math.random(), Math.random(), Math.random());
     this.mesh = new THREE.Mesh(this.geometry, new THREE.MeshPhongMaterial({ color }));
     this.mesh.geometry.computeVertexNormals();
+    this.mesh.castShadow = true
+    this.mesh.receiveShadow = true;
+
     _scene.add(this.mesh);
 
     this.edge_geometry = new THREE.BufferGeometry();
@@ -196,7 +196,7 @@ class SoftBodyObject {
     for (let i = 0; i < this.positions.length; i++) {
       this.velocities[i].add(new THREE.Vector3(0, -controls.gravity * dt, 0));
     }
-    if (grabbed === this.mesh) this.grabInteract(dt);
+    if (grabbed === this.mesh) this.grabInteract();
 
     for (let i = 0; i < this.positions.length; i++) {
       for (let k = 0; k < boundPositions.length; k++) {
@@ -263,76 +263,73 @@ class SoftBodyObject {
       }
     }
 
-    for (let n = 0; n < controls.NumSubSteps; n++) {
+    for (let otherObj of objects) {
+      this.spatial_hash.update(otherObj.positions);
+      if (!controls.collisionCheck) break;
+      if (otherObj === this) continue;
+      for (let i = 0; i < this.positions.length; i++) {
+        if (!this.isSurface[i]) continue;
+        const q = this.positions[i];
 
-      for (let otherObj of objects) {
-        this.spatial_hash.update(otherObj.positions);
-        if (!controls.collisionCheck) break;
-        if (otherObj === this) continue;
-        for (let i = 0; i < this.positions.length; i++) {
-          if (!this.isSurface[i]) continue;
-          const q = this.positions[i];
+        const closeIds = this.spatial_hash.query(q, hashSpacing);
+        let thisMass = 1 / this.invMasses[i];
 
-          const closeIds = this.spatial_hash.query(q, hashSpacing);
-          let thisMass = 1 / this.invMasses[i];
+        const constIds = closeIds.reduce((prev, curr) => {
+          return [...prev, ...this.id_to_tet[curr]];
+        }, []);
 
-          const constIds = closeIds.reduce((prev, curr) => {
-            return [...prev, ...this.id_to_tet[curr]];
-          }, []);
+        constIds.forEach((j) => {
+          let surfacePoints: Array<THREE.Vector3> = [];
+          let otherTetMass = 0;
+          const [p0, p1, p2, p3] = [...otherObj.tet_constrains[j]].map((tetId) => {
+            const p = otherObj.positions[tetId];
+            if (otherObj.isSurface[tetId]) surfacePoints.push(p);
+            otherTetMass += 1 / otherObj.invMasses[tetId];
+            return p;
+          });
+          if (surfacePoints.length === 0) return;
 
-          constIds.forEach((j) => {
-            let surfacePoints: Array<THREE.Vector3> = [];
-            let otherTetMass = 0;
-            const [p0, p1, p2, p3] = [...otherObj.tet_constrains[j]].map((tetId) => {
-              const p = otherObj.positions[tetId];
-              if (otherObj.isSurface[tetId]) surfacePoints.push(p);
-              otherTetMass += 1 / otherObj.invMasses[tetId];
-              return p;
-            });
-            if (surfacePoints.length === 0) return;
+          const p0q = q.clone().sub(p0);
+          const p01 = p1.clone().sub(p0);
+          const p02 = p2.clone().sub(p0);
+          const p03 = p3.clone().sub(p0);
+          const M = new THREE.Matrix3();
+          M.setFromMatrix4(new THREE.Matrix4().makeBasis(p01, p02, p03));
+          if (M.determinant() === 0.0) return;
+          M.invert();
+          const w = p0q.clone().applyMatrix3(M);
 
-            const p0q = q.clone().sub(p0);
-            const p01 = p1.clone().sub(p0);
-            const p02 = p2.clone().sub(p0);
-            const p03 = p3.clone().sub(p0);
-            const M = new THREE.Matrix3();
-            M.setFromMatrix4(new THREE.Matrix4().makeBasis(p01, p02, p03));
-            if (M.determinant() === 0.0) return;
-            M.invert();
-            const w = p0q.clone().applyMatrix3(M);
+          let isInTet = true;
+          [1 - w.x - w.y - w.z, w.x, w.y, w.z].forEach((val) => {
+            if (val < 0) isInTet = false;
+          });
+          if (!isInTet) return;
 
-            let isInTet = true;
-            [1 - w.x - w.y - w.z, w.x, w.y, w.z].forEach((val) => {
-              if (val < 0) isInTet = false;
-            });
-            if (!isInTet) return;
+          const [s0, s1, s2] = [...surfacePoints];
+          const vert = new THREE.Vector3();
 
-            const [s0, s1, s2] = [...surfacePoints];
-            const vert = new THREE.Vector3();
-
-            switch (surfacePoints.length) {
-              case 1:
-                vert.subVectors(s0, q);
-                break;
-              case 2:
-                const s0q = q.clone().sub(s0);
-                vert.subVectors(s1, s0).normalize();
-                vert.multiplyScalar(vert.dot(s0q)).sub(s0q);
-                break;
-              default:
-                const s01 = s1.clone().sub(s0);
-                const s02 = s2.clone().sub(s1);
-                const qs0 = s0.clone().sub(q);
-                vert.crossVectors(s02, s01).normalize();
-                vert.multiplyScalar(vert.dot(qs0));
-                break;
-            }
-            let totMass = thisMass + otherTetMass;
-            [p0, p1, p2, p3].forEach((p) => p.sub(vert.clone().multiplyScalar(thisMass / totMass)));
-            q.add(vert.clone().multiplyScalar(otherTetMass / totMass));
-            return;
-          })
-        }
+          switch (surfacePoints.length) {
+            case 1:
+              vert.subVectors(s0, q);
+              break;
+            case 2:
+              const s0q = q.clone().sub(s0);
+              vert.subVectors(s1, s0).normalize();
+              vert.multiplyScalar(vert.dot(s0q)).sub(s0q);
+              break;
+            default:
+              const s01 = s1.clone().sub(s0);
+              const s02 = s2.clone().sub(s1);
+              const qs0 = s0.clone().sub(q);
+              vert.crossVectors(s02, s01).normalize();
+              vert.multiplyScalar(vert.dot(qs0));
+              break;
+          }
+          let totMass = thisMass + otherTetMass;
+          [p0, p1, p2, p3].forEach((p) => p.sub(vert.clone().multiplyScalar(thisMass / totMass)));
+          q.add(vert.clone().multiplyScalar(otherTetMass / totMass));
+          return;
+        })
       }
     }
 
@@ -343,10 +340,7 @@ class SoftBodyObject {
     this.renderUpdate();
   }
 
-  grabInteract(dt: number) {
-    const grabTension = 1;
-    const grabDamping = 1;
-
+  grabInteract() {
     let closestId = -1;
     let closestDist = 1e9;
     for (let i = 0; i < this.positions.length; i++) {
@@ -357,13 +351,7 @@ class SoftBodyObject {
       }
     }
 
-    const grabDir = new THREE.Vector3();
-    grabDir.subVectors(currentPoint, this.positions[closestId]);
-    const grabLen = grabDir.length();
-    grabDir.normalize();
-    const projVel = this.velocities[closestId].dot(grabDir);
-    const grabForce = grabLen * grabTension - projVel * grabDamping;
-    this.velocities[closestId].add(grabDir.multiplyScalar(grabForce * this.invMasses[closestId] * dt));
+    this.positions[closestId].copy(currentPoint)
   }
 
   move(x: number, y: number, z: number) {
@@ -393,6 +381,8 @@ class RigidSphere {
     const sphereGeo = new THREE.SphereGeometry(this.radius);
     const sphereMat = new THREE.MeshPhongMaterial({ color });
     this.mesh = new THREE.Mesh(sphereGeo, sphereMat);
+    this.mesh.castShadow = true;
+    this.mesh.receiveShadow = true;
     _scene.add(this.mesh);
   }
 
@@ -404,9 +394,12 @@ class RigidSphere {
     const restitution = 0.5;
 
     this.velocity.add(new THREE.Vector3(0, -controls.gravity * dt, 0));
-    if (grabbed === this.mesh) this.grabInteract(dt);
-
-    this.position.add(this.velocity.clone().multiplyScalar(dt));
+    if (grabbed === this.mesh) {
+      const prevPosition = this.position.clone()
+      this.grabInteract();
+      this.velocity.copy(this.position.clone().sub(prevPosition).multiplyScalar(1 / dt))
+    }
+    else this.position.add(this.velocity.clone().multiplyScalar(dt));
 
     for (let k = 0; k < boundPositions.length; k++) {
       const gap = this.position.clone().sub(boundPositions[k]).dot(boundNormals[k]) - this.radius;
@@ -445,17 +438,8 @@ class RigidSphere {
     this.renderUpdate();
   }
 
-  grabInteract(dt: number) {
-    const grabTension = 1;
-    const grabDamping = 1;
-
-    const grabDir = new THREE.Vector3();
-    grabDir.subVectors(currentPoint, this.position);
-    const grabLen = grabDir.length();
-    grabDir.normalize();
-    const projVel = this.velocity.dot(grabDir);
-    const grabForce = grabLen * grabTension - projVel * grabDamping;
-    this.velocity.add(grabDir.multiplyScalar(grabForce * this.invMass * dt));
+  grabInteract() {
+    this.position.copy(currentPoint)
   }
 
   move(x: number, y: number, z: number) {
@@ -592,10 +576,10 @@ const controls = {
     spheres = [];
   },
   gravity: 10,
-  invStiffness: 50,
+  invStiffness: 5,
   friction: 0.9,
   NumSubSteps: 10,
-  TimeStepSize: 10,
+  TimeStepSize: 13,
   collisionCheck: false,
   addSphere: false,
   radius: 0.5,
@@ -610,9 +594,9 @@ function initGUI() {
   gui.add(controls, "reset");
   gui.add(controls, "gravity", 0.0, 10.0).step(0.1);
   gui.add(controls, "friction", 0.0, 2.0).step(0.01);
-  gui.add(controls, "invStiffness", 0.0, 100.0).step(0.1);
+  gui.add(controls, "invStiffness", 0.0, 10.0).step(0.1);
   gui.add(controls, "NumSubSteps", 1, 50);
-  gui.add(controls, "TimeStepSize", 10, 1000);
+  gui.add(controls, "TimeStepSize", 1, 100);
   gui.add(controls, "collisionCheck");
   gui.add(controls, "addSphere");
   gui.add(controls, "radius", 0.1, 1).step(0.1);
