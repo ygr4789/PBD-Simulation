@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { SpatialHash } from "./hash";
 
-import { plotPoint, cleanPoint, emphasizePoint } from "./debug"
+import { plotPoint, cleanPoint, emphasizePoint } from "./debug";
 
 import "./style/style.css";
 
@@ -126,7 +126,7 @@ class SoftBodyObject {
     const color = new THREE.Color(Math.random(), Math.random(), Math.random());
     this.mesh = new THREE.Mesh(this.geometry, new THREE.MeshPhongMaterial({ color }));
     this.mesh.geometry.computeVertexNormals();
-    this.mesh.castShadow = true
+    this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
 
     _scene.add(this.mesh);
@@ -212,7 +212,7 @@ class SoftBodyObject {
     }
 
     const alpha = controls.invStiffness / dt ** 2;
-    for (let n = 0; n < controls.NumSubSteps; n++) {
+    for (let n = 0; n < controls.numSubSteps; n++) {
       for (let i = 0; i < this.tet_constrains.length; i++) {
         const [x0, x1, x2, x3] = [...this.tet_constrains[i]].map((tetId) => this.positions[tetId]);
         const w = [...this.tet_constrains[i]].map((tetId) => this.invMasses[tetId]);
@@ -329,7 +329,7 @@ class SoftBodyObject {
           [p0, p1, p2, p3].forEach((p) => p.sub(vert.clone().multiplyScalar(thisMass / totMass)));
           q.add(vert.clone().multiplyScalar(otherTetMass / totMass));
           return;
-        })
+        });
       }
     }
 
@@ -351,7 +351,7 @@ class SoftBodyObject {
       }
     }
 
-    this.positions[closestId].copy(currentPoint)
+    this.positions[closestId].copy(currentPoint);
   }
 
   move(x: number, y: number, z: number) {
@@ -395,11 +395,15 @@ class RigidSphere {
 
     this.velocity.add(new THREE.Vector3(0, -controls.gravity * dt, 0));
     if (grabbed === this.mesh) {
-      const prevPosition = this.position.clone()
+      const prevPosition = this.position.clone();
       this.grabInteract();
-      this.velocity.copy(this.position.clone().sub(prevPosition).multiplyScalar(1 / dt))
-    }
-    else this.position.add(this.velocity.clone().multiplyScalar(dt));
+      this.velocity.copy(
+        this.position
+          .clone()
+          .sub(prevPosition)
+          .multiplyScalar(1 / dt)
+      );
+    } else this.position.add(this.velocity.clone().multiplyScalar(dt));
 
     for (let k = 0; k < boundPositions.length; k++) {
       const gap = this.position.clone().sub(boundPositions[k]).dot(boundNormals[k]) - this.radius;
@@ -439,7 +443,7 @@ class RigidSphere {
   }
 
   grabInteract() {
-    this.position.copy(currentPoint)
+    this.position.copy(currentPoint);
   }
 
   move(x: number, y: number, z: number) {
@@ -495,12 +499,13 @@ type parsedData = {
   tetSurfaceTriIds: Array<number>; // the indices of vertices that form triangles of surface in three units.
 };
 
-const tetrahedronData = require("./models/data/Tetrahedron.json");
+// const tetrahedronData = require("./models/data/Tetrahedron.json");
+// Dummy data used for debugging
 const bunnyData = require("./models/data/Bunny.json");
 const eggData = require("./models/data/Egg_.json");
 const bearData = require("./models/data/Bear_.json");
 const heartData = require("./models/data/Heart_.json");
-let dataList = [bunnyData, tetrahedronData, eggData, bearData, heartData];
+let dataList = [bunnyData, eggData, bearData, heartData];
 let currentData = bunnyData;
 
 // ===================== MAIN =====================
@@ -521,9 +526,9 @@ function main() {
     let timediff = (currTime - prevTime) / 1000;
     prevTime = currTime;
     requestAnimationFrame(animate);
-    // setTimeout(animate, controls.TimeStepSize);
+    // setTimeout(animate, controls.timeStepSize);
     stats.begin();
-    if (isPlaying) updateStates(controls.TimeStepSize / 1000);
+    if (isPlaying) updateStates(controls.timeStepSize / 1000);
     // if (isPlaying) updateStates(timediff);
     renderer.render(scene, camera);
     stats.end();
@@ -541,20 +546,22 @@ function main() {
 const hashSpacing = 0.05;
 const hashSize = 5000;
 const controls = {
-  debug: () => {
-  },
+  debug: () => {},
   toggle: () => {
     isPlaying = !isPlaying;
   },
   add: () => {
-    if (!controls.addSphere) {
-      const object = new SoftBodyObject(currentData, scene);
-      object.move(5 * (0.5 - Math.random()), 1, 5 * (0.5 - Math.random()));
-      objects.push(object);
-    } else {
-      const sphere = new RigidSphere(scene);
-      sphere.move(5 * (0.5 - Math.random()), 5, 5 * (0.5 - Math.random()));
-      spheres.push(sphere);
+    switch (controls.selectedObject) {
+      case 0:
+        const object = new SoftBodyObject(currentData, scene);
+        object.move(5 * (0.5 - Math.random()), 1.5, 5 * (0.5 - Math.random()));
+        objects.push(object);
+        break;
+      case 1:
+        const sphere = new RigidSphere(scene);
+        sphere.move(5 * (0.5 - Math.random()), 1.5, 5 * (0.5 - Math.random()));
+        spheres.push(sphere);
+        break;
     }
   },
   reset: () => {
@@ -575,42 +582,55 @@ const controls = {
     }
     spheres = [];
   },
+  selectedObject: 0,
+  selectedData: 0,
+  numSubSteps: 10,
+  timeStepSize: 13,
+  collisionCheck: false,
   gravity: 10,
   invStiffness: 5,
   friction: 0.9,
-  NumSubSteps: 10,
-  TimeStepSize: 13,
-  collisionCheck: false,
-  addSphere: false,
   radius: 0.5,
-  data: 0,
 };
 
 function initGUI() {
   const gui = new dat.GUI();
-  gui.add(controls, "debug");
-  gui.add(controls, "toggle").name("Pause / Unpause");
-  gui.add(controls, "add");
-  gui.add(controls, "reset");
-  gui.add(controls, "gravity", 0.0, 10.0).step(0.1);
-  gui.add(controls, "friction", 0.0, 2.0).step(0.01);
-  gui.add(controls, "invStiffness", 0.0, 10.0).step(0.1);
-  gui.add(controls, "NumSubSteps", 1, 50);
-  gui.add(controls, "TimeStepSize", 1, 100);
-  gui.add(controls, "collisionCheck");
-  gui.add(controls, "addSphere");
-  gui.add(controls, "radius", 0.1, 1).step(0.1);
-  gui
-    .add(controls, "data", {
-      Tetrahedron: 1,
-      Bunny: 0,
-      Egg: 2,
-      Bear: 3,
-      Heart: 4,
+
+  const folder1 = gui.addFolder("Control");
+  folder1.add(controls, "debug").name("Debug");
+  folder1.add(controls, "toggle").name("Run / Pause");
+  folder1.add(controls, "add").name("Add Object");
+  folder1.add(controls, "reset").name("Reset");
+  folder1
+    .add(controls, "selectedObject", {
+      SoftBody: 0,
+      RigidBody: 1,
     })
     .onChange((id) => {
+      controls.selectedObject = parseInt(id);
+    });
+  folder1
+    .add(controls, "selectedData", {
+      Bunny: 0,
+      Egg: 1,
+      Bear: 2,
+      Heart: 3,
+    })
+    .onChange((id) => {
+      controls.selectedData = parseInt(id);
       currentData = dataList[id];
     });
+  folder1.add(controls, "radius", 0.1, 1).step(0.1).name("Radius");
+
+  const folder2 = gui.addFolder("Simulation");
+  folder2.add(controls, "numSubSteps", 1, 50).name("Sub Step");
+  folder2.add(controls, "timeStepSize", 1, 100).name("Time Step (ms)");
+  folder2.add(controls, "collisionCheck").name("Collision Check");
+
+  const folder3 = gui.addFolder("Parameters");
+  folder3.add(controls, "gravity", 0.0, 10.0).step(0.1).name("Gravity");
+  folder3.add(controls, "friction", 0.0, 2.0).step(0.01).name("Friction");
+  folder3.add(controls, "invStiffness", 0.0, 10.0).step(0.1).name("Inverse Stiffness");
 }
 
 function preventDefault() {
