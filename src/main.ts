@@ -2,6 +2,7 @@ import * as dat from "dat.gui";
 import * as Stats from "stats.js";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { SpatialHash } from "./hash";
 
 import "./style/style.css";
 
@@ -101,11 +102,14 @@ class SoftBodyObject {
   init_edge_lengths: Array<number>;
 
   isSurface: Array<boolean>;
+  spatial_hash: SpatialHash;
+  id_to_tet: Array<Array<number>>;
 
   constructor(file: parsedData, _scene: THREE.Scene) {
     this.init_positions = file.verts;
     this.positions = [];
     this.velocities = [];
+    this.spatial_hash = new SpatialHash(0.1, 10000, this.positions.length);
 
     for (let i = 0; i < this.init_positions.length; i += 3) {
       this.positions.push(new THREE.Vector3(...this.init_positions.slice(i, i + 3)));
@@ -120,7 +124,9 @@ class SoftBodyObject {
     this.geometry.setIndex(new THREE.BufferAttribute(this.indices, 1));
     this.geometry.setAttribute("position", new THREE.BufferAttribute(this.vertices, 3));
 
-    this.mesh = new THREE.Mesh(this.geometry, new THREE.MeshPhongMaterial({ color: 0x00f00f, flatShading: true }));
+    // this.mesh = new THREE.Mesh(this.geometry, new THREE.MeshPhongMaterial({ color: 0x00f00f, flatShading: true }));
+    const color = new THREE.Color(Math.random(), Math.random(), Math.random());
+    this.mesh = new THREE.Mesh(this.geometry, new THREE.MeshPhongMaterial({ color }));
     this.mesh.geometry.computeVertexNormals();
     _scene.add(this.mesh);
 
@@ -129,19 +135,24 @@ class SoftBodyObject {
     this.edge_geometry.setAttribute("position", new THREE.BufferAttribute(this.vertices, 3));
 
     this.edges = new THREE.LineSegments(this.edge_geometry, new THREE.LineBasicMaterial({ color: 0xffffff }));
-    _scene.add(this.edges);
+    // _scene.add(this.edges);
 
-    this.isSurface = new Array(this.vertices.length).fill(false);
+    this.isSurface = new Array(this.positions.length).fill(false);
     for (let id of file.tetSurfaceTriIds) this.isSurface[id] = true;
 
     // Constrains
 
     this.tet_constrains = [];
+    this.id_to_tet = new Array(this.positions.length);
+    for (let i = 0; i < this.id_to_tet.length; i++) this.id_to_tet[i] = [];
     this.init_tet_volumes = [];
     this.invMasses = new Array(this.positions.length).fill(0);
     for (let i = 0; i < file.tetIds.length; i += 4) {
       this.tet_constrains.push([...file.tetIds.slice(i, i + 4)]);
-      const [x0, x1, x2, x3] = [...this.tet_constrains[i / 4]].map((tetId) => this.positions[tetId]);
+      const [x0, x1, x2, x3] = [...this.tet_constrains[i / 4]].map((tetId) => {
+        this.id_to_tet[tetId].push(i);
+        return this.positions[tetId];
+      });
       const x01 = x1.clone().sub(x0);
       const x02 = x2.clone().sub(x0);
       const x03 = x3.clone().sub(x0);
@@ -253,12 +264,20 @@ class SoftBodyObject {
     }
 
     for (let otherObj of objects) {
+      this.spatial_hash.update(otherObj.positions);
       if (!controls.collisionCheck) break;
       if (otherObj === this) continue;
       for (let i = 0; i < this.positions.length; i++) {
         if (!this.isSurface[i]) continue;
         const q = this.positions[i];
+        const closeIds = this.spatial_hash.query(q, 0.1);
         let thisMass = 1 / this.invMasses[i];
+
+        // if (closeIds.includes(undefined)) console.log(closeIds);
+        // const constIds = closeIds.reduce((prev, curr) => {
+        //   return [...prev, ...this.id_to_tet[curr]];
+        // }, []);
+
         for (let j = 0; j < otherObj.tet_constrains.length; j++) {
           let surfacePoints: Array<THREE.Vector3> = [];
           let otherTetMass = 0;
@@ -380,8 +399,9 @@ class RigidSphere {
     this.radius = controls.radius;
     this.invMass = 1 / this.radius ** 2;
 
+    const color = new THREE.Color(Math.random(), Math.random(), Math.random());
     const sphereGeo = new THREE.SphereGeometry(this.radius);
-    const sphereMat = new THREE.MeshPhongMaterial({ color: 0x00f00f });
+    const sphereMat = new THREE.MeshPhongMaterial({ color });
     this.mesh = new THREE.Mesh(sphereGeo, sphereMat);
     _scene.add(this.mesh);
   }
@@ -527,15 +547,17 @@ function main() {
     let currTime = new Date().getTime();
     let timediff = (currTime - prevTime) / 1000;
     prevTime = currTime;
-    setTimeout(animate, controls.TimeStepSize);
+    requestAnimationFrame(animate);
+    // setTimeout(animate, controls.TimeStepSize);
     stats.begin();
-    if (isPlaying) updateStates(timediff);
+    if (isPlaying) updateStates(controls.TimeStepSize / 1000);
+    // if (isPlaying) updateStates(timediff);
     renderer.render(scene, camera);
     stats.end();
   }
   function updateStates(dt: number) {
     for (let object of objects) {
-      object.update(0.01);
+      object.update(dt);
     }
     for (let sphere of spheres) {
       sphere.update(dt);
