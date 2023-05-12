@@ -4,12 +4,6 @@ export const tmp = new Float32Array(96);
 export const seg = new Float32Array(96);
 export const mat = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
 
-export function set(rd: Float32Array, i: number, x: number, y: number, z: number) {
-  rd[3 * i] = x;
-  rd[3 * i + 1] = y;
-  rd[3 * i + 2] = z;
-}
-
 export function add(rd: Float32Array, i0: number, rs1: Float32Array, i1: number, rs2: Float32Array, i2: number, scale = 1) {
   rd[3 * i0] = rs1[3 * i1] + rs2[3 * i2] * scale;
   rd[3 * i0 + 1] = rs1[3 * i1 + 1] + rs2[3 * i2 + 1] * scale;
@@ -127,19 +121,13 @@ export function invMat() {
   return det;
 }
 
-export function printPoint(rd1: Float32Array, i1: number, rd2: Float32Array | undefined = undefined, i2: number = 0, rd3: Float32Array | undefined = undefined, i3: number = 0) {
-  if (rd2 === undefined) console.log(i1, [rd1[3 * i1], rd1[3 * i1 + 1], rd1[3 * i1 + 2]]);
-  if (rd2 !== undefined && rd3 === undefined) console.log([rd1[3 * i1], rd1[3 * i1 + 1], rd1[3 * i1 + 2]], [rd2[3 * i2], rd2[3 * i2 + 1], rd2[3 * i2 + 2]]);
-  if (rd2 !== undefined && rd3 !== undefined) console.log([rd1[3 * i1], rd1[3 * i1 + 1], rd1[3 * i1 + 2]], [rd2[3 * i2], rd2[3 * i2 + 1], rd2[3 * i2 + 2]], [rd3[3 * i3], rd3[3 * i3 + 1], rd3[3 * i3 + 2]]);
-}
-
 export function toArr(rd: Float32Array, i: number) {
   return new Float32Array([rd[3 * i], rd[3 * i + 1], rd[3 * i + 2]]);
 }
 export function toVec(rd: Float32Array, i: number) {
   return new THREE.Vector3(rd[3 * i], rd[3 * i + 1], rd[3 * i + 2]);
 }
-export function setByVec(rd: Float32Array, i: number, v: THREE.Vector3) {
+export function setVec(rd: Float32Array, i: number, v: THREE.Vector3) {
   rd[3 * i] = v.x;
   rd[3 * i + 1] = v.y;
   rd[3 * i + 2] = v.z;
