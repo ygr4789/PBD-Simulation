@@ -125,7 +125,7 @@ class SoftBodyObject {
   is_surface: Array<boolean>;
   vert_tets: Array<Array<number>>;
 
-  constructor(file: parsedData, _scene: THREE.Scene) {
+  constructor(file: parsedData, scene_: THREE.Scene) {
     this.prev_positions = new Float32Array(file.verts);
     this.positions = new Float32Array(file.verts);
     this.velocities = new Float32Array(file.verts.length);
@@ -150,14 +150,14 @@ class SoftBodyObject {
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
 
-    _scene.add(this.mesh);
+    scene_.add(this.mesh);
 
     this.edge_geometry = new THREE.BufferGeometry();
     this.edge_geometry.setIndex(new THREE.BufferAttribute(this.edge_idss, 1));
     this.edge_geometry.setAttribute("position", new THREE.BufferAttribute(this.positions, 3));
 
     this.edges = new THREE.LineSegments(this.edge_geometry, new THREE.LineBasicMaterial({ color: 0xffffff }));
-    // _scene.add(this.edges);
+    // scene_.add(this.edges);
 
     this.is_surface = new Array(this.vert_num);
     for (let id of file.tetSurfaceTriIds) this.is_surface[id] = true;
@@ -210,28 +210,19 @@ class SoftBodyObject {
     this.edge_geometry.computeBoundingSphere();
   }
 
-  applyStates(dt: number) {
+  applyStates(dt: number, gravity: number) {
     this.positions.forEach((value, i) => {
       this.prev_positions[i] = value;
     });
     for (let i = 0; i < this.vert_num; i++) {
-      this.velocities[3 * i + 1] -= controls.gravity * dt;
-    }
-    for (let i = 0; i < this.vert_num; i++) {
-      for (let k = 0; k < boundPositions.length; k++) {
-        vec.sub(vec.tmp, 0, this.positions, i, boundPosition, k);
-        let gap = vec.dot(vec.tmp, 0, boundNormal, k);
-        if (gap < 0) {
-          vec.scale(this.velocities, i, 1 - controls.friction);
-        }
-      }
+      this.velocities[3 * i + 1] -= gravity * dt;
     }
     this.velocities.forEach((value, i) => {
       this.positions[i] += value * dt;
     });
   }
-  grabInteract() {
-    vec.setVec(this.positions, grabbedVertId, cursorPoint);
+  grabInteract(dt: number, target: THREE.Vector3) {
+    vec.setVec(this.positions, grabbedVertId, target);
   }
   solveTetConstraints(dt: number) {
     for (let i = 0; i < this.tet_num; i++) {
@@ -264,7 +255,7 @@ class SoftBodyObject {
       }
     }
   }
-  solveEdgeConstraints(dt: number) {
+  solveEdgeConstraints(dt: number, alpha: number) {
     for (let i = 0; i < this.edge_num; i++) {
       let x = new Uint16Array(2);
       let w = new Float32Array(2);
@@ -277,21 +268,28 @@ class SoftBodyObject {
       let L = vec.norm(vec.tmp, 0);
       let L0 = this.init_edge_lengths[i];
       vec.scale(vec.tmp, 0, 1 / L);
-      const alpha = controls.invStiffness / dt ** 2;
-      let denom = w[0] + w[1] + alpha;
+      let alpha_ = alpha / dt ** 2;
+      let denom = w[0] + w[1] + alpha_;
       if (denom === 0.0) continue;
       let lambda = (L - L0) / denom;
 
       vec.addi(this.positions, x[0], vec.tmp, 0, lambda * w[0]);
       vec.addi(this.positions, x[1], vec.tmp, 0, -lambda * w[1]);
     }
+  }
 
+  handleBoundaries() {
     for (let i = 0; i < this.vert_num; i++) {
       for (let k = 0; k < boundPositions.length; k++) {
         vec.sub(vec.tmp, 0, this.positions, i, boundPosition, k);
         let gap = vec.dot(vec.tmp, 0, boundNormal, k);
         if (gap < 0) {
           vec.addi(this.positions, i, boundNormal, k, -gap);
+        }
+        if (gap < 0.01) {
+          for (let j = 0; j < 3; j++) {
+            this.velocities[i * 3 + j] *= -0.5 * boundNormal[j];
+          }
         }
       }
     }
@@ -318,17 +316,15 @@ class SoftBodyObject {
 class RigidSphere {
   position: THREE.Vector3;
   velocity: THREE.Vector3;
-  softDrive: THREE.Vector3;
   invMass: number;
   mesh: THREE.Mesh;
   radius: number;
 
-  constructor(_scene: THREE.Scene) {
+  constructor(radius_: number, scene_: THREE.Scene) {
     this.position = new THREE.Vector3();
     this.velocity = new THREE.Vector3();
-    this.softDrive = new THREE.Vector3();
-    this.radius = controls.radius;
-    this.invMass = (4 * Math.PI) / 3 / this.radius ** 3;
+    this.radius = radius_;
+    this.invMass = (4 * Math.PI) / this.radius ** 3;
 
     const color = new THREE.Color(Math.random(), Math.random(), Math.random());
     const sphereGeo = new THREE.SphereGeometry(this.radius);
@@ -336,37 +332,19 @@ class RigidSphere {
     this.mesh = new THREE.Mesh(sphereGeo, sphereMat);
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
-    _scene.add(this.mesh);
+    scene_.add(this.mesh);
   }
 
   renderUpdate() {
     this.mesh.position.copy(this.position);
   }
 
-  update(dt: number) {
+  applyStates(dt: number, gravity: number) {
+    this.velocity.add(new THREE.Vector3(0, -gravity * dt, 0));
+    this.position.add(this.velocity.clone().multiplyScalar(dt));
+  }
+  handleCollision() {
     const restitution = 0.5;
-
-    this.velocity.add(new THREE.Vector3(0, -controls.gravity * dt, 0));
-    this.velocity.add(this.softDrive.clone().multiplyScalar(dt));
-    if (grabbedMesh === this.mesh) {
-      const prevPosition = this.position.clone();
-      this.grabInteract();
-      this.velocity.copy(
-        this.position
-          .clone()
-          .sub(prevPosition)
-          .multiplyScalar(1 / dt)
-      );
-    } else this.position.add(this.velocity.clone().multiplyScalar(dt));
-
-    for (let k = 0; k < boundPositions.length; k++) {
-      const gap = this.position.clone().sub(boundPositions[k]).dot(boundNormals[k]) - this.radius;
-      const proj = this.velocity.dot(boundNormals[k]);
-      if (gap < 0.01 && proj < 0) {
-        this.velocity.add(boundNormals[k].clone().multiplyScalar(-proj * (1 + restitution)));
-      }
-    }
-
     for (let other of spheres) {
       if (other === this) continue;
       const dir = this.position.clone().sub(other.position);
@@ -376,18 +354,24 @@ class RigidSphere {
       if (gap < 0.01 && relProj < 0) {
         this.velocity.add(dir.clone().multiplyScalar(-relProj * restitution));
         other.velocity.add(dir.clone().multiplyScalar(relProj * restitution));
+      }
+      if (gap < 0) {
         this.position.add(dir.clone().multiplyScalar(-gap));
       }
     }
-
+  }
+  handleBoundaries() {
+    const restitution = 0.5;
     for (let k = 0; k < boundPositions.length; k++) {
       const gap = this.position.clone().sub(boundPositions[k]).dot(boundNormals[k]) - this.radius;
+      const proj = this.velocity.dot(boundNormals[k]);
+      if (gap < 0.01 && proj < 0) {
+        this.velocity.add(boundNormals[k].clone().multiplyScalar(-proj * (1 + restitution)));
+      }
       if (gap < 0) {
         this.position.add(boundNormals[k].clone().multiplyScalar(-gap));
       }
     }
-
-    this.renderUpdate();
   }
 
   reset() {
@@ -396,8 +380,15 @@ class RigidSphere {
     this.renderUpdate();
   }
 
-  grabInteract() {
-    this.position.copy(cursorPoint);
+  grabInteract(dt: number, target: THREE.Vector3) {
+    const prevPosition = this.position.clone();
+    this.position.copy(target);
+    this.velocity.copy(
+      this.position
+        .clone()
+        .sub(prevPosition)
+        .multiplyScalar(1 / dt)
+    );
   }
 
   move(x: number, y: number, z: number) {
@@ -463,6 +454,26 @@ function solveCollision1(obj1: SoftBodyObject, obj2: SoftBodyObject) {
   }
 }
 
+function solveCollision2(soft: SoftBodyObject, rigid: RigidSphere, dt: number) {
+  for (let i = 0; i < soft.vert_num; i++) {
+    vec.setVec(vec.tmp, 0, rigid.position);
+    vec.subi(vec.tmp, 0, soft.positions, i);
+    let gap = vec.norm(vec.tmp, 0) - rigid.radius;
+    // if(i === 0)console.log(gap);
+    if (gap < 0) {
+      console.log("detect");
+      vec.normalize(vec.tmp, 0);
+      vec.scale(vec.tmp, 0, gap);
+      vec.mv(vec.tmp, 1, soft.positions, i);
+      vec.addi(soft.positions, i, vec.tmp, 0);
+      let dx = vec.dist(vec.tmp, 1, soft.positions, i);
+      let I = dx / dt / soft.inv_masses[i];
+
+      rigid.velocity.sub(vec.toVec(vec.tmp, 0).multiplyScalar(I * rigid.invMass));
+    }
+  }
+}
+
 // ===================== MOUSE =====================
 
 let cursorPoint = new THREE.Vector3();
@@ -483,7 +494,7 @@ function mouseTrack() {
   });
 
   window.addEventListener("mousedown", () => {
-    const intersects = raycaster.intersectObjects([...objects, ...spheres].map((obj) => obj.mesh));
+    const intersects = raycaster.intersectObjects([...softbodies, ...spheres].map((obj) => obj.mesh));
     if (intersects.length === 0) grabbedMesh = null;
     else {
       let grabbedPoint = intersects[0].point;
@@ -493,11 +504,11 @@ function mouseTrack() {
       orbitControl.enabled = false;
 
       let closestDist = Number.MAX_VALUE;
-      for (let object of objects) {
-        if (object.mesh !== grabbedMesh) continue;
+      for (let soft of softbodies) {
+        if (soft.mesh !== grabbedMesh) continue;
         vec.setVec(vec.tmp, 0, grabbedPoint);
-        for (let i = 0; i < object.vert_num; i++) {
-          let dist = vec.dist(vec.tmp, 0, object.positions, i);
+        for (let i = 0; i < soft.vert_num; i++) {
+          let dist = vec.dist(vec.tmp, 0, soft.positions, i);
           if (closestDist > dist) {
             closestDist = dist;
             grabbedVertId = i;
@@ -534,7 +545,7 @@ let currentData = bunnyData;
 
 // ===================== MAIN =====================
 
-let objects: Array<SoftBodyObject> = [];
+let softbodies: Array<SoftBodyObject> = [];
 let spheres: Array<RigidSphere> = [];
 let isPlaying: Boolean = false;
 
@@ -560,27 +571,30 @@ function main() {
 }
 
 function updateStates(dt: number) {
-  for (let object of objects) {
-    object.applyStates(dt);
-    if (grabbedMesh === object.mesh) object.grabInteract();
+  for (let object of [...softbodies, ...spheres]) {
+    object.applyStates(dt, controls.gravity);
+    if (grabbedMesh === object.mesh) object.grabInteract(dt, cursorPoint);
   }
   for (let n = 0; n < controls.numSubSteps; n++) {
-    for (let object of objects) {
-      object.solveTetConstraints(dt);
-      object.solveEdgeConstraints(dt);
+    for (let soft of softbodies) {
+      soft.solveTetConstraints(dt);
+      soft.solveEdgeConstraints(dt, controls.invStiffness);
       if (controls.collisionCheck) {
-        object.spatial_hash.update();
-        for (let other of objects) solveCollision1(object, other);
-        // for (let sphere of spheres) solveCollision2(object, sphere, dt);
+        soft.spatial_hash.update();
+        for (let other of softbodies) solveCollision1(soft, other);
+        for (let sphere of spheres) solveCollision2(soft, sphere, dt);
       }
     }
   }
-  for (let object of objects) {
-    object.updateStates(dt);
-    object.renderUpdate();
-  }
   for (let sphere of spheres) {
-    sphere.update(dt);
+    sphere.handleCollision();
+  }
+  for (let soft of softbodies) {
+    soft.updateStates(dt);
+  }
+  for (let object of [...softbodies, ...spheres]) {
+    object.handleBoundaries();
+    object.renderUpdate();
   }
 }
 
@@ -595,29 +609,29 @@ const controls = {
     isPlaying = !isPlaying;
   },
   add: () => {
-    switch (controls.selectedObject) {
+    switch (controls.selectedModel) {
       case 0:
-        const object = new SoftBodyObject(currentData, scene);
-        object.move(5 * (0.5 - Math.random()), 1.5, 5 * (0.5 - Math.random()));
-        objects.push(object);
+        const soft = new SoftBodyObject(currentData, scene);
+        soft.move(5 * (0.5 - Math.random()), 1.5, 5 * (0.5 - Math.random()));
+        softbodies.push(soft);
         break;
       case 1:
-        const sphere = new RigidSphere(scene);
+        const sphere = new RigidSphere(controls.radius, scene);
         sphere.move(5 * (0.5 - Math.random()), 1.5, 5 * (0.5 - Math.random()));
         spheres.push(sphere);
         break;
     }
   },
   reset: () => {
-    for (let object of objects) {
-      object.mesh.geometry.dispose();
-      object.edges.geometry.dispose();
-      (object.mesh.material as THREE.Material).dispose();
-      (object.edges.material as THREE.Material).dispose();
-      scene.remove(object.mesh);
-      scene.remove(object.edges);
+    for (let soft of softbodies) {
+      soft.mesh.geometry.dispose();
+      soft.edges.geometry.dispose();
+      (soft.mesh.material as THREE.Material).dispose();
+      (soft.edges.material as THREE.Material).dispose();
+      scene.remove(soft.mesh);
+      scene.remove(soft.edges);
     }
-    objects = [];
+    softbodies = [];
 
     for (let sphere of spheres) {
       sphere.mesh.geometry.dispose();
@@ -626,14 +640,13 @@ const controls = {
     }
     spheres = [];
   },
-  selectedObject: 0,
+  selectedModel: 0,
   selectedData: 0,
   numSubSteps: 10,
   timeStepSize: 13,
   collisionCheck: false,
   gravity: 10,
   invStiffness: 5,
-  friction: 0.9,
   radius: 0.5,
 };
 
@@ -646,12 +659,12 @@ function initGUI() {
   folder1.add(controls, "add").name("Add Object");
   folder1.add(controls, "reset").name("Reset");
   folder1
-    .add(controls, "selectedObject", {
+    .add(controls, "selectedModel", {
       SoftBody: 0,
       RigidBody: 1,
     })
     .onChange((id) => {
-      controls.selectedObject = parseInt(id);
+      controls.selectedModel = parseInt(id);
     });
   folder1
     .add(controls, "selectedData", {
@@ -673,7 +686,6 @@ function initGUI() {
 
   const folder3 = gui.addFolder("Parameters");
   folder3.add(controls, "gravity", 0.0, 10.0).step(0.1).name("Gravity");
-  folder3.add(controls, "friction", 0.0, 2.0).step(0.01).name("Friction");
   folder3.add(controls, "invStiffness", 0.0, 10.0).step(0.1).name("Inverse Stiffness");
 }
 
