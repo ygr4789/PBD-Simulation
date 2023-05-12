@@ -1,10 +1,12 @@
 import * as dat from "dat.gui";
 import * as Stats from "stats.js";
 import * as THREE from "three";
+import * as glm from "gl-matrix";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { SpatialHash } from "./hash";
+import * as vec from "./vector";
 
-import { plotPoint, cleanPoint, emphasizePoint } from "./debug";
+import { plotPoint, cleanAll, plotLine, emphasizePoint } from "./debug";
 
 import "./style/style.css";
 
@@ -77,54 +79,73 @@ const boundNormals = [
   new THREE.Vector3(0.0, 0.0, -1.0), // maxZ
   new THREE.Vector3(0.0, 0.0, 1.0), // minZ
 ];
+// prettier-ignore
+const boundPosition = new Float32Array([
+  0.0, 0.0, 0.0, // grond
+  bound, 0.0, 0.0, // maxX
+  -bound, 0.0, 0.0, // minX
+  0.0, 0.0, bound, // maxZ
+  0.0, 0.0, -bound, // minZ
+]);
+// prettier-ignore
+const boundNormal = new Float32Array([
+  0.0, 1.0, 0.0, // grond
+  -1.0, 0.0, 0.0, // maxX
+  1.0, 0.0, 0.0, // minX
+  0.0, 0.0, -1.0, // maxZ
+  0.0, 0.0, 1.0, // minZ
+]);
 
 // ===================== SOFTBODY =====================
 
 class SoftBodyObject {
-  init_positions: Array<number>;
-  positions: Array<THREE.Vector3>;
-  velocities: Array<THREE.Vector3>;
-  invMasses: Array<number>;
+  prev_positions: Float32Array;
+  positions: Float32Array;
+  velocities: Float32Array;
+  inv_masses: Float32Array;
 
-  vertices: Float32Array;
-  indices: Uint16Array;
-  edgeindices: Uint16Array;
+  surface_ids: Uint16Array;
+  tet_ids: Uint16Array;
+  edge_idss: Uint16Array;
+  init_tet_volumes: Float32Array;
+  init_edge_lengths: Float32Array;
+
+  vert_num: number;
+  tet_num: number;
+  edge_num: number;
 
   geometry: THREE.BufferGeometry;
+  material: THREE.MeshPhongMaterial;
   mesh: THREE.Mesh;
+
   edge_geometry: THREE.BufferGeometry;
   edges: THREE.LineSegments;
 
-  tet_constrains: Array<Array<number>>;
-  init_tet_volumes: Array<number>;
-  edge_constrains: Array<Array<number>>;
-  init_edge_lengths: Array<number>;
-
-  isSurface: Array<boolean>;
+  is_surface: Uint8Array;
   spatial_hash: SpatialHash;
-  id_to_tet: Array<Array<number>>;
+  vert_tets: Array<Array<number>>;
 
   constructor(file: parsedData, _scene: THREE.Scene) {
-    this.init_positions = file.verts;
-    this.positions = [];
-    this.velocities = [];
+    this.prev_positions = new Float32Array(file.verts.length);
+    this.positions = new Float32Array(file.verts);
+    this.velocities = new Float32Array(file.verts.length);
+    this.vert_num = file.verts.length / 3;
+
+    this.tet_ids = new Uint16Array(file.tetIds);
+    this.surface_ids = new Uint16Array(file.tetSurfaceTriIds);
+    this.edge_idss = new Uint16Array(file.tetEdgeIds);
+    this.tet_num = this.tet_ids.length / 4;
+    this.edge_num = this.edge_idss.length / 2;
+
     this.spatial_hash = new SpatialHash(hashSpacing, hashSize, this.positions.length);
 
-    for (let i = 0; i < this.init_positions.length; i += 3) {
-      this.positions.push(new THREE.Vector3(...this.init_positions.slice(i, i + 3)));
-      this.velocities.push(new THREE.Vector3(0, 0, 0));
-    }
-
-    this.vertices = new Float32Array(this.init_positions);
-    this.indices = new Uint16Array(file.tetSurfaceTriIds);
-    this.edgeindices = new Uint16Array(file.tetEdgeIds);
-
     this.geometry = new THREE.BufferGeometry();
-    this.geometry.setIndex(new THREE.BufferAttribute(this.indices, 1));
-    this.geometry.setAttribute("position", new THREE.BufferAttribute(this.vertices, 3));
+    this.geometry.setIndex(new THREE.BufferAttribute(this.surface_ids, 1));
+    this.geometry.setAttribute("position", new THREE.BufferAttribute(this.positions, 3));
 
     const color = new THREE.Color(Math.random(), Math.random(), Math.random());
-    this.mesh = new THREE.Mesh(this.geometry, new THREE.MeshPhongMaterial({ color }));
+    this.material = new THREE.MeshPhongMaterial({ color });
+    this.mesh = new THREE.Mesh(this.geometry, this.material);
     this.mesh.geometry.computeVertexNormals();
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
@@ -132,56 +153,57 @@ class SoftBodyObject {
     _scene.add(this.mesh);
 
     this.edge_geometry = new THREE.BufferGeometry();
-    this.edge_geometry.setIndex(new THREE.BufferAttribute(this.edgeindices, 1));
-    this.edge_geometry.setAttribute("position", new THREE.BufferAttribute(this.vertices, 3));
+    this.edge_geometry.setIndex(new THREE.BufferAttribute(this.edge_idss, 1));
+    this.edge_geometry.setAttribute("position", new THREE.BufferAttribute(this.positions, 3));
 
     this.edges = new THREE.LineSegments(this.edge_geometry, new THREE.LineBasicMaterial({ color: 0xffffff }));
     // _scene.add(this.edges);
 
-    this.isSurface = new Array(this.positions.length).fill(false);
-    for (let id of file.tetSurfaceTriIds) this.isSurface[id] = true;
+    this.is_surface = new Uint8Array(this.positions.length / 4);
+    for (let id of file.tetSurfaceTriIds) this.is_surface[id] = 1;
 
     // Constrains
+    this.vert_tets = new Array(this.vert_num);
+    this.inv_masses = new Float32Array(this.vert_num);
+    for (let i = 0; i < this.vert_num; i++) this.vert_tets[i] = [];
+    this.init_tet_volumes = new Float32Array(this.tet_num);
 
-    this.tet_constrains = [];
-    this.id_to_tet = new Array(this.positions.length);
-    for (let i = 0; i < this.id_to_tet.length; i++) this.id_to_tet[i] = [];
-    this.init_tet_volumes = [];
-    this.invMasses = new Array(this.positions.length).fill(0);
-    for (let i = 0; i < file.tetIds.length; i += 4) {
-      this.tet_constrains.push([...file.tetIds.slice(i, i + 4)]);
-      const [x0, x1, x2, x3] = [...this.tet_constrains[i / 4]].map((tetId) => {
-        this.id_to_tet[tetId].push(i / 4);
-        return this.positions[tetId];
-      });
-      const x01 = x1.clone().sub(x0);
-      const x02 = x2.clone().sub(x0);
-      const x03 = x3.clone().sub(x0);
-      this.init_tet_volumes.push(x01.clone().cross(x02).dot(x03) / 6);
-      this.tet_constrains[i / 4].forEach((tetId) => {
-        this.invMasses[tetId] += this.init_tet_volumes[i / 4] / 4;
-      });
+    for (let i = 0; i < this.tet_num; i++) {
+      let x = new Float32Array(4);
+      for (let j = 0; j < 4; j++) {
+        x[j] = this.tet_ids[4 * i + j];
+        this.vert_tets[x[j]].push(i);
+      }
+
+      for (let j = 0; j < 4; j++) {
+        vec.sub(vec.seg, j, this.positions, x[(j + 1) % 4], this.positions, x[j % 4]);
+      }
+
+      vec.cross(vec.tmp, 0, vec.seg, 0, vec.seg, 1);
+      this.init_tet_volumes[i] = vec.dot(vec.tmp, 0, vec.seg, 2) / 6;
+
+      for (let j = 0; j < 4; j++) {
+        x[j] = this.tet_ids[4 * i + j];
+        this.vert_tets[x[j]].push(i);
+        this.inv_masses[x[j]] += this.init_tet_volumes[i] / 4;
+      }
     }
-    this.invMasses.forEach((val, i, arr) => {
+
+    this.inv_masses.forEach((val, i, arr) => {
       arr[i] = 1 / val;
     });
 
-    this.edge_constrains = [];
-    this.init_edge_lengths = [];
-    for (let i = 0; i < file.tetEdgeIds.length; i += 2) {
-      this.edge_constrains.push([...file.tetEdgeIds.slice(i, i + 2)]);
-      const [x0, x1] = [...this.edge_constrains[i / 2]].map((tetId) => this.positions[tetId]);
-      this.init_edge_lengths.push(x0.distanceTo(x1));
+    this.init_edge_lengths = new Float32Array(this.edge_num);
+    for (let i = 0; i < this.edge_num; i++) {
+      let x = new Float32Array(2);
+      for (let j = 0; j < 2; j++) {
+        x[j] = this.edge_idss[2 * i + j];
+      }
+      this.init_edge_lengths[i] = vec.dist(this.positions, x[0], this.positions, x[1]);
     }
   }
 
   renderUpdate() {
-    for (let i = 0; i < this.positions.length; i++) {
-      this.vertices[i * 3] = this.positions[i].x;
-      this.vertices[i * 3 + 1] = this.positions[i].y;
-      this.vertices[i * 3 + 2] = this.positions[i].z;
-    }
-
     this.geometry.computeVertexNormals();
     this.geometry.attributes.position.needsUpdate = true;
     this.geometry.computeBoundingSphere();
@@ -192,149 +214,165 @@ class SoftBodyObject {
   }
 
   update(dt: number) {
-    let prev_positions = this.positions.map((v) => v.clone());
-    for (let i = 0; i < this.positions.length; i++) {
-      this.velocities[i].add(new THREE.Vector3(0, -controls.gravity * dt, 0));
+    this.positions.forEach((value, i) => {
+      this.prev_positions[i] = value;
+    });
+
+    for (let i = 0; i < this.vert_num; i++) {
+      this.velocities[3 * i + 1] -= controls.gravity * dt;
     }
+    for (let i = 0; i < this.vert_num; i++) {
+      for (let k = 0; k < boundPositions.length; k++) {
+        vec.sub(vec.tmp, 0, this.positions, i, boundPosition, k);
+        let gap = vec.dot(vec.tmp, 0, boundNormal, k);
+        if (gap < 0) {
+          vec.scale(this.velocities, i, 1 - controls.friction);
+        }
+      }
+    }
+
+    this.velocities.forEach((value, i) => {
+      this.positions[i] += value * dt;
+    });
+
     if (grabbed === this.mesh) this.grabInteract();
 
-    for (let i = 0; i < this.positions.length; i++) {
-      for (let k = 0; k < boundPositions.length; k++) {
-        const gap = this.positions[i].clone().sub(boundPositions[k]).dot(boundNormals[k]);
-        if (gap < 0.01) {
-          this.velocities[i].multiplyScalar(1 - controls.friction);
-        }
-      }
-    }
-
-    for (let i = 0; i < this.positions.length; i++) {
-      this.positions[i].add(this.velocities[i].clone().multiplyScalar(dt));
-    }
-
-    const alpha = controls.invStiffness / dt ** 2;
     for (let n = 0; n < controls.numSubSteps; n++) {
-      for (let i = 0; i < this.tet_constrains.length; i++) {
-        const [x0, x1, x2, x3] = [...this.tet_constrains[i]].map((tetId) => this.positions[tetId]);
-        const w = [...this.tet_constrains[i]].map((tetId) => this.invMasses[tetId]);
-        const x01 = x1.clone().sub(x0);
-        const x02 = x2.clone().sub(x0);
-        const x03 = x3.clone().sub(x0);
-        const x12 = x1.clone().sub(x2);
-        const x13 = x1.clone().sub(x3);
-        const volume = new THREE.Vector3().crossVectors(x01, x02).dot(x03) / 6;
-        const init_volume = this.init_tet_volumes[i];
-        const grad_x0_c = x13.clone().cross(x12);
-        const grad_x1_c = x02.clone().cross(x03);
-        const grad_x2_c = x03.clone().cross(x01);
-        const grad_x3_c = x01.clone().cross(x02);
-        const denom =
-          [grad_x0_c, grad_x1_c, grad_x2_c, grad_x3_c].reduce((prev, curr, k) => {
-            return prev + w[k] * curr.length() ** 2;
-          }, 0) + 1;
+      for (let i = 0; i < this.tet_num; i++) {
+        let x = new Uint16Array(4);
+        let w = new Float32Array(4);
+        for (let j = 0; j < 4; j++) {
+          x[j] = this.tet_ids[4 * i + j];
+          w[j] = this.inv_masses[x[j]];
+        }
+
+        for (let j = 0; j < 4; j++) {
+          vec.sub(vec.seg, j, this.positions, x[(j + 1) % 4], this.positions, x[j % 4]);
+        }
+        vec.cross(vec.tmp, 0, vec.seg, 0, vec.seg, 1);
+        let V = vec.dot(vec.tmp, 0, vec.seg, 2) / 6;
+        let V0 = this.init_tet_volumes[i];
+
+        let denom = 0;
+        let dir = new Float32Array([1.0, -1.0, 1.0, -1.0]);
+        for (let j = 0; j < 4; j++) {
+          vec.cross(vec.tmp, j, vec.seg, (j + 1) % 4, vec.seg, (j + 2) % 4);
+          vec.scale(vec.tmp, j, dir[j]);
+          denom += vec.normSquare(vec.tmp, j) * w[j];
+        }
         if (denom == 0.0) continue;
-        const lambda = (-6.0 * (volume - init_volume)) / denom;
-        x0.add(grad_x0_c.multiplyScalar(lambda * w[0]));
-        x1.add(grad_x1_c.multiplyScalar(lambda * w[1]));
-        x2.add(grad_x2_c.multiplyScalar(lambda * w[2]));
-        x3.add(grad_x3_c.multiplyScalar(lambda * w[3]));
+
+        let lambda = (6.0 * (V - V0)) / denom;
+        for (let j = 0; j < 4; j++) {
+          vec.addi(this.positions, x[j], vec.tmp, j, lambda * w[j]);
+        }
       }
 
-      for (let i = 0; i < this.edge_constrains.length; i++) {
-        const [x0, x1] = [...this.edge_constrains[i]].map((edgeId) => this.positions[edgeId]);
-        const [w0, w1] = [...this.edge_constrains[i]].map((edgeId) => this.invMasses[edgeId]);
-        const x01 = x1.clone().sub(x0);
-        const l = x01.length();
-        const l0 = this.init_edge_lengths[i];
-        x01.normalize();
-        const denom = w0 + w1 + alpha;
-        if (denom == 0.0) continue;
-        const lambda = (l - l0) / denom;
-        x0.add(x01.clone().multiplyScalar(lambda * w0));
-        x1.add(x01.clone().multiplyScalar(-lambda * w1));
+      for (let i = 0; i < this.edge_num; i++) {
+        let x = new Uint16Array(2);
+        let w = new Float32Array(2);
+        for (let j = 0; j < 2; j++) {
+          x[j] = this.edge_idss[2 * i + j];
+          w[j] = this.inv_masses[x[j]];
+        }
+
+        vec.sub(vec.tmp, 0, this.positions, x[1], this.positions, x[0]);
+        let L = vec.norm(vec.tmp, 0);
+        let L0 = this.init_edge_lengths[i];
+        vec.scale(vec.tmp, 0, 1 / L);
+        const alpha = controls.invStiffness / dt ** 2;
+        let denom = w[0] + w[1];
+        if (denom === 0.0) continue;
+        let lambda = (L - L0) / denom;
+
+        vec.addi(this.positions, x[0], vec.tmp, 0, lambda * w[0]);
+        vec.addi(this.positions, x[1], vec.tmp, 0, -lambda * w[1]);
       }
 
-      for (let i = 0; i < this.positions.length; i++) {
+      for (let i = 0; i < this.vert_num; i++) {
         for (let k = 0; k < boundPositions.length; k++) {
-          const gap = this.positions[i].clone().sub(boundPositions[k]).dot(boundNormals[k]);
+          vec.sub(vec.tmp, 0, this.positions, i, boundPosition, k);
+          let gap = vec.dot(vec.tmp, 0, boundNormal, k);
           if (gap < 0) {
-            this.positions[i].add(boundNormals[k].clone().multiplyScalar(-gap));
+            vec.addi(this.positions, i, boundNormal, k, -gap);
           }
         }
       }
     }
 
-    for (let otherObj of objects) {
-      this.spatial_hash.update(otherObj.positions);
-      if (!controls.collisionCheck) break;
-      if (otherObj === this) continue;
-      for (let i = 0; i < this.positions.length; i++) {
-        if (!this.isSurface[i]) continue;
-        const q = this.positions[i];
+    // for (let otherObj of objects) {
+      //   if (!controls.collisionCheck) break;
+    //   this.spatial_hash.update(otherObj.positions);
+    //   if (otherObj === this) continue;
+    //   for (let i = 0; i < this.positions.length; i++) {
+    //     if (!this.isSurface[i]) continue;
+    //     const q = this.positions[i];
 
-        const closeIds = this.spatial_hash.query(q, hashSpacing);
-        let thisMass = 1 / this.invMasses[i];
+    //     const closeIds = this.spatial_hash.query(q, hashSpacing);
+    //     let thisMass = 1 / this.invMasses[i];
 
-        const constIds = closeIds.reduce((prev, curr) => {
-          return [...prev, ...this.id_to_tet[curr]];
-        }, []);
+    //     const constIds = closeIds.reduce((prev, curr) => {
+    //       return [...prev, ...this.vert_tets[curr]];
+    //     }, []);
 
-        constIds.forEach((j) => {
-          let surfacePoints: Array<THREE.Vector3> = [];
-          let otherTetMass = 0;
-          const [p0, p1, p2, p3] = [...otherObj.tet_constrains[j]].map((tetId) => {
-            const p = otherObj.positions[tetId];
-            if (otherObj.isSurface[tetId]) surfacePoints.push(p);
-            otherTetMass += 1 / otherObj.invMasses[tetId];
-            return p;
-          });
-          if (surfacePoints.length === 0) return;
+    //     constIds.forEach((j) => {
+    //       let surfacePoints: Array<THREE.Vector3> = [];
+    //       let otherTetMass = 0;
+    //       const [p0, p1, p2, p3] = [...otherObj.tet_constrains[j]].map((tetId) => {
+    //         const p = otherObj.positions[tetId];
+    //         if (otherObj.isSurface[tetId]) surfacePoints.push(p);
+    //         otherTetMass += 1 / otherObj.invMasses[tetId];
+    //         return p;
+    //       });
+    //       if (surfacePoints.length === 0) return;
 
-          const p0q = q.clone().sub(p0);
-          const p01 = p1.clone().sub(p0);
-          const p02 = p2.clone().sub(p0);
-          const p03 = p3.clone().sub(p0);
-          const M = new THREE.Matrix3();
-          M.setFromMatrix4(new THREE.Matrix4().makeBasis(p01, p02, p03));
-          if (M.determinant() === 0.0) return;
-          M.invert();
-          const w = p0q.clone().applyMatrix3(M);
+    //       const p0q = q.clone().sub(p0);
+    //       const p01 = p1.clone().sub(p0);
+    //       const p02 = p2.clone().sub(p0);
+    //       const p03 = p3.clone().sub(p0);
+    //       const M = new THREE.Matrix3();
+    //       M.setFromMatrix4(new THREE.Matrix4().makeBasis(p01, p02, p03));
+    //       if (M.determinant() === 0.0) return;
+    //       M.invert();
+    //       const w = p0q.clone().applyMatrix3(M);
 
-          let isInTet = true;
-          [1 - w.x - w.y - w.z, w.x, w.y, w.z].forEach((val) => {
-            if (val < 0) isInTet = false;
-          });
-          if (!isInTet) return;
+    //       let isInTet = true;
+    //       [1 - w.x - w.y - w.z, w.x, w.y, w.z].forEach((val) => {
+    //         if (val < 0) isInTet = false;
+    //       });
+    //       if (!isInTet) return;
 
-          const [s0, s1, s2] = [...surfacePoints];
-          const vert = new THREE.Vector3();
+    //       const [s0, s1, s2] = [...surfacePoints];
+    //       const vert = new THREE.Vector3();
 
-          switch (surfacePoints.length) {
-            case 1:
-              vert.subVectors(s0, q);
-              break;
-            case 2:
-              const s0q = q.clone().sub(s0);
-              vert.subVectors(s1, s0).normalize();
-              vert.multiplyScalar(vert.dot(s0q)).sub(s0q);
-              break;
-            default:
-              const s01 = s1.clone().sub(s0);
-              const s02 = s2.clone().sub(s1);
-              const qs0 = s0.clone().sub(q);
-              vert.crossVectors(s02, s01).normalize();
-              vert.multiplyScalar(vert.dot(qs0));
-              break;
-          }
-          let totMass = thisMass + otherTetMass;
-          [p0, p1, p2, p3].forEach((p) => p.sub(vert.clone().multiplyScalar(thisMass / totMass)));
-          q.add(vert.clone().multiplyScalar(otherTetMass / totMass));
-          return;
-        });
-      }
-    }
+    //       switch (surfacePoints.length) {
+    //         case 1:
+    //           vert.subVectors(s0, q);
+    //           break;
+    //         case 2:
+    //           const s0q = q.clone().sub(s0);
+    //           vert.subVectors(s1, s0).normalize();
+    //           vert.multiplyScalar(vert.dot(s0q)).sub(s0q);
+    //           break;
+    //         default:
+    //           const s01 = s1.clone().sub(s0);
+    //           const s02 = s2.clone().sub(s1);
+    //           const qs0 = s0.clone().sub(q);
+    //           vert.crossVectors(s02, s01).normalize();
+    //           vert.multiplyScalar(vert.dot(qs0));
+    //           break;
+    //       }
+    //       let totMass = thisMass + otherTetMass;
+    //       [p0, p1, p2, p3].forEach((p) => p.sub(vert.clone().multiplyScalar(thisMass / totMass)));
+    //       q.add(vert.clone().multiplyScalar(otherTetMass / totMass));
+    //       return;
+    //     });
+    //   }
+    // }
 
-    for (let i = 0; i < this.positions.length; i++) {
-      this.velocities[i].subVectors(this.positions[i], prev_positions[i]).multiplyScalar(1.0 / dt);
+    for (let i = 0; i < this.vert_num; i++) {
+      vec.sub(this.velocities, i, this.positions, i, this.prev_positions, i);
+      vec.scale(this.velocities, i, 1.0 / dt);
     }
 
     this.renderUpdate();
@@ -344,21 +382,22 @@ class SoftBodyObject {
     let closestId = -1;
     let closestDist = 1e9;
     for (let i = 0; i < this.positions.length; i++) {
-      let dist = this.positions[i].distanceTo(grabbedPoint);
+      vec.setByVec(vec.tmp, 0, grabbedPoint);
+      let dist = vec.dist(vec.tmp, 0, this.positions, i);
       if (closestDist > dist) {
         closestDist = dist;
         closestId = i;
       }
     }
-
-    this.positions[closestId].copy(currentPoint);
+    vec.setByVec(this.positions, closestId, currentPoint);
   }
 
   move(x: number, y: number, z: number) {
-    for (let p of this.positions) {
-      p.add(new THREE.Vector3(x, y, z));
+    for(let i=0; i<this.vert_num; i++) {
+      this.positions[3* i] += x;
+      this.positions[3* i + 1] += y;
+      this.positions[3* i + 2] += z;
     }
-    this.renderUpdate();
   }
 }
 
@@ -499,7 +538,7 @@ type parsedData = {
   tetSurfaceTriIds: Array<number>; // the indices of vertices that form triangles of surface in three units.
 };
 
-// const tetrahedronData = require("./models/data/Tetrahedron.json");
+const tetrahedronData = require("./models/data/Tetrahedron.json");
 // Dummy data used for debugging
 const bunnyData = require("./models/data/Bunny.json");
 const eggData = require("./models/data/Egg_.json");
@@ -533,20 +572,24 @@ function main() {
     renderer.render(scene, camera);
     stats.end();
   }
-  function updateStates(dt: number) {
-    for (let object of objects) {
-      object.update(dt);
-    }
-    for (let sphere of spheres) {
-      sphere.update(dt);
-    }
+}
+
+function updateStates(dt: number) {
+  for (let object of objects) {
+    object.update(dt);
+  }
+  for (let sphere of spheres) {
+    sphere.update(dt);
   }
 }
 
 const hashSpacing = 0.05;
 const hashSize = 5000;
 const controls = {
-  debug: () => {},
+  debug: () => {
+    updateStates(controls.timeStepSize / 1000);
+    renderer.render(scene, camera);
+  },
   toggle: () => {
     isPlaying = !isPlaying;
   },
