@@ -121,8 +121,8 @@ class SoftBodyObject {
   edge_geometry: THREE.BufferGeometry;
   edges: THREE.LineSegments;
 
-  is_surface: Uint8Array;
   spatial_hash: SpatialHash;
+  is_surface: Array<boolean>;
   vert_tets: Array<Array<number>>;
 
   constructor(file: parsedData, _scene: THREE.Scene) {
@@ -137,7 +137,7 @@ class SoftBodyObject {
     this.tet_num = this.tet_ids.length / 4;
     this.edge_num = this.edge_idss.length / 2;
 
-    this.spatial_hash = new SpatialHash(hashSpacing, hashSize, this.positions.length);
+    this.spatial_hash = new SpatialHash(this.positions, hashSpacing, hashSize);
 
     this.geometry = new THREE.BufferGeometry();
     this.geometry.setIndex(new THREE.BufferAttribute(this.surface_ids, 1));
@@ -159,13 +159,13 @@ class SoftBodyObject {
     this.edges = new THREE.LineSegments(this.edge_geometry, new THREE.LineBasicMaterial({ color: 0xffffff }));
     // _scene.add(this.edges);
 
-    this.is_surface = new Uint8Array(this.positions.length / 4);
-    for (let id of file.tetSurfaceTriIds) this.is_surface[id] = 1;
+    this.is_surface = new Array(this.vert_num);
+    for (let id of file.tetSurfaceTriIds) this.is_surface[id] = true;
 
     // Constrains
     this.vert_tets = new Array(this.vert_num);
     this.inv_masses = new Float32Array(this.vert_num);
-    for (let i = 0; i < this.vert_num; i++) this.vert_tets[i] = [];
+    for (let i = 0; i < this.vert_num; i++) this.vert_tets[i] = new Array();
     this.init_tet_volumes = new Float32Array(this.tet_num);
 
     for (let i = 0; i < this.tet_num; i++) {
@@ -183,12 +183,9 @@ class SoftBodyObject {
       this.init_tet_volumes[i] = vec.dot(vec.tmp, 0, vec.seg, 2) / 6;
 
       for (let j = 0; j < 4; j++) {
-        x[j] = this.tet_ids[4 * i + j];
-        this.vert_tets[x[j]].push(i);
         this.inv_masses[x[j]] += this.init_tet_volumes[i] / 4;
       }
     }
-
     this.inv_masses.forEach((val, i, arr) => {
       arr[i] = 1 / val;
     });
@@ -281,7 +278,7 @@ class SoftBodyObject {
         let L0 = this.init_edge_lengths[i];
         vec.scale(vec.tmp, 0, 1 / L);
         const alpha = controls.invStiffness / dt ** 2;
-        let denom = w[0] + w[1];
+        let denom = w[0] + w[1] + alpha;
         if (denom === 0.0) continue;
         let lambda = (L - L0) / denom;
 
@@ -300,75 +297,62 @@ class SoftBodyObject {
       }
     }
 
-    // for (let otherObj of objects) {
-      //   if (!controls.collisionCheck) break;
-    //   this.spatial_hash.update(otherObj.positions);
-    //   if (otherObj === this) continue;
-    //   for (let i = 0; i < this.positions.length; i++) {
-    //     if (!this.isSurface[i]) continue;
-    //     const q = this.positions[i];
+    this.spatial_hash.update();
+    for (let other of objects) {
+      if (!controls.collisionCheck) break;
+      if (other === this) continue;
+      for (let i = 0; i < other.vert_num; i++) {
+        if (other.is_surface[i]) continue;
 
-    //     const closeIds = this.spatial_hash.query(q, hashSpacing);
-    //     let thisMass = 1 / this.invMasses[i];
+        let closeIds = this.spatial_hash.query(other.positions, i, hashSpacing);
 
-    //     const constIds = closeIds.reduce((prev, curr) => {
-    //       return [...prev, ...this.vert_tets[curr]];
-    //     }, []);
+        let constIds = closeIds.reduce((prev, curr) => {
+          return [...prev, ...this.vert_tets[curr]];
+        }, []);
 
-    //     constIds.forEach((j) => {
-    //       let surfacePoints: Array<THREE.Vector3> = [];
-    //       let otherTetMass = 0;
-    //       const [p0, p1, p2, p3] = [...otherObj.tet_constrains[j]].map((tetId) => {
-    //         const p = otherObj.positions[tetId];
-    //         if (otherObj.isSurface[tetId]) surfacePoints.push(p);
-    //         otherTetMass += 1 / otherObj.invMasses[tetId];
-    //         return p;
-    //       });
-    //       if (surfacePoints.length === 0) return;
+        constIds.forEach((j) => {
+          let cnt = 0;
+          let s = new Float32Array(4);
+          let p = new Float32Array(4);
 
-    //       const p0q = q.clone().sub(p0);
-    //       const p01 = p1.clone().sub(p0);
-    //       const p02 = p2.clone().sub(p0);
-    //       const p03 = p3.clone().sub(p0);
-    //       const M = new THREE.Matrix3();
-    //       M.setFromMatrix4(new THREE.Matrix4().makeBasis(p01, p02, p03));
-    //       if (M.determinant() === 0.0) return;
-    //       M.invert();
-    //       const w = p0q.clone().applyMatrix3(M);
+          for (let k = 0; k < 4; k++) {
+            p[k] = this.tet_ids[4 * j + k];
+            if (this.is_surface[p[k]]) s[cnt++] = p[k];
+          }
+          if(cnt !== 3) return;
 
-    //       let isInTet = true;
-    //       [1 - w.x - w.y - w.z, w.x, w.y, w.z].forEach((val) => {
-    //         if (val < 0) isInTet = false;
-    //       });
-    //       if (!isInTet) return;
+          for (let k = 0; k < 3; k++) {
+            vec.sub(vec.seg, k, this.positions, p[k], this.positions, p[3]);
+          }
+          vec.sub(vec.tmp, 0, other.positions, i, this.positions, p[3]);
+          vec.setMat(vec.seg, 0, vec.seg, 1, vec.seg, 2);
+          let det = vec.invMat();
+          if (det == 0.0) return;
+          vec.applyMat(vec.tmp, 0);
 
-    //       const [s0, s1, s2] = [...surfacePoints];
-    //       const vert = new THREE.Vector3();
+          let isInTet = true;
+          let w = vec.toArr(vec.tmp, 0);
+          if (1 - w[0] - w[1] - w[2] < 0) isInTet = false;
+          w.forEach((val) => {
+            if (val < 0) isInTet = false;
+          });
+          if (!isInTet) return;
 
-    //       switch (surfacePoints.length) {
-    //         case 1:
-    //           vert.subVectors(s0, q);
-    //           break;
-    //         case 2:
-    //           const s0q = q.clone().sub(s0);
-    //           vert.subVectors(s1, s0).normalize();
-    //           vert.multiplyScalar(vert.dot(s0q)).sub(s0q);
-    //           break;
-    //         default:
-    //           const s01 = s1.clone().sub(s0);
-    //           const s02 = s2.clone().sub(s1);
-    //           const qs0 = s0.clone().sub(q);
-    //           vert.crossVectors(s02, s01).normalize();
-    //           vert.multiplyScalar(vert.dot(qs0));
-    //           break;
-    //       }
-    //       let totMass = thisMass + otherTetMass;
-    //       [p0, p1, p2, p3].forEach((p) => p.sub(vert.clone().multiplyScalar(thisMass / totMass)));
-    //       q.add(vert.clone().multiplyScalar(otherTetMass / totMass));
-    //       return;
-    //     });
-    //   }
-    // }
+          vec.sub(vec.seg, 0, this.positions, s[0], other.positions, i)
+          vec.sub(vec.seg, 1, this.positions, s[1], this.positions, s[0])
+          vec.sub(vec.seg, 2, this.positions, s[2], this.positions, s[1])
+          vec.cross(vec.tmp, 0, vec.seg, 2, vec.seg, 1);
+          vec.normalize(vec.tmp, 0);
+          var mag = vec.dot(vec.tmp, 0, vec.seg, 0)
+          vec.scale(vec.tmp, 0, mag);
+          for (let k = 0; k < 4; k++) {
+            vec.subi(this.positions, p[k], vec.tmp, 0, 2);
+          }
+          vec.addi(other.positions, i, vec.tmp, 0, 2)
+          return;
+        });
+      }
+    }
 
     for (let i = 0; i < this.vert_num; i++) {
       vec.sub(this.velocities, i, this.positions, i, this.prev_positions, i);
@@ -393,10 +377,10 @@ class SoftBodyObject {
   }
 
   move(x: number, y: number, z: number) {
-    for(let i=0; i<this.vert_num; i++) {
-      this.positions[3* i] += x;
-      this.positions[3* i + 1] += y;
-      this.positions[3* i + 2] += z;
+    for (let i = 0; i < this.vert_num; i++) {
+      this.positions[3 * i] += x;
+      this.positions[3 * i + 1] += y;
+      this.positions[3 * i + 2] += z;
     }
   }
 }
