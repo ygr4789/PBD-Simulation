@@ -6,11 +6,13 @@ export class SpatialHash {
   countTable: Array<number>;
   particleTable: Array<number>;
   numParticles: number;
+  positions: Array<Vector3>
 
-  constructor(spacing_: number, tableSize_: number, numParticles_: number) {
+  constructor(spacing_: number, tableSize_: number, positions_: Array<Vector3>) {
     this.spacing = spacing_;
     this.tableSize = tableSize_;
-    this.numParticles = numParticles_;
+    this.numParticles = positions_.length;
+    this.positions = positions_;
     this.countTable = Array(tableSize_ + 1);
     this.particleTable = Array(this.numParticles);
   }
@@ -28,18 +30,17 @@ export class SpatialHash {
     return Math.floor(x / this.spacing);
   }
 
-  update(positions: Array<Vector3>) {
-    this.numParticles = positions.length;
+  update() {
     this.countTable.fill(0);
     
     for (let i = 0; i < this.numParticles; i++) {
-      this.countTable[this.hashVec(positions[i])]++;
+      this.countTable[this.hashVec(this.positions[i])]++;
     }
     for (let i = 0; i < this.tableSize; i++) {
       this.countTable[i + 1] += this.countTable[i];
     }
     for (let i = 0; i < this.numParticles; i++) {
-      this.particleTable[--this.countTable[this.hashVec(positions[i])]] = i;
+      this.particleTable[--this.countTable[this.hashVec(this.positions[i])]] = i;
     }
   }
 

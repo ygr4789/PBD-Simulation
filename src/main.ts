@@ -108,12 +108,12 @@ class SoftBodyObject {
     this.init_positions = file.verts;
     this.positions = [];
     this.velocities = [];
-    this.spatial_hash = new SpatialHash(hashSpacing, hashSize, this.positions.length);
-
+    
     for (let i = 0; i < this.init_positions.length; i += 3) {
       this.positions.push(new THREE.Vector3(...this.init_positions.slice(i, i + 3)));
       this.velocities.push(new THREE.Vector3(0, 0, 0));
     }
+    this.spatial_hash = new SpatialHash(hashSpacing, hashSize, this.positions);
 
     this.vertices = new Float32Array(this.init_positions);
     this.indices = new Uint16Array(file.tetSurfaceTriIds);
@@ -263,16 +263,16 @@ class SoftBodyObject {
       }
     }
 
-    for (let otherObj of objects) {
-      this.spatial_hash.update(otherObj.positions);
+    this.spatial_hash.update();
+    for (let other of objects) {
       if (!controls.collisionCheck) break;
-      if (otherObj === this) continue;
-      for (let i = 0; i < this.positions.length; i++) {
-        if (!this.isSurface[i]) continue;
-        const q = this.positions[i];
+      if (other === this) continue;
+      for (let i = 0; i < other.positions.length; i++) {
+        if (!other.isSurface[i]) continue;
+        const q = other.positions[i];
 
         const closeIds = this.spatial_hash.query(q, hashSpacing);
-        let thisMass = 1 / this.invMasses[i];
+        let otherMass = 1 / other.invMasses[i];
 
         const constIds = closeIds.reduce((prev, curr) => {
           return [...prev, ...this.id_to_tet[curr]];
@@ -280,11 +280,11 @@ class SoftBodyObject {
 
         constIds.forEach((j) => {
           let surfacePoints: Array<THREE.Vector3> = [];
-          let otherTetMass = 0;
-          const [p0, p1, p2, p3] = [...otherObj.tet_constrains[j]].map((tetId) => {
-            const p = otherObj.positions[tetId];
-            if (otherObj.isSurface[tetId]) surfacePoints.push(p);
-            otherTetMass += 1 / otherObj.invMasses[tetId];
+          let thisMass = 0;
+          const [p0, p1, p2, p3] = [...this.tet_constrains[j]].map((tetId) => {
+            const p = this.positions[tetId];
+            if (this.isSurface[tetId]) surfacePoints.push(p);
+            thisMass += 1 / this.invMasses[tetId];
             return p;
           });
           if (surfacePoints.length === 0) return;
@@ -325,9 +325,9 @@ class SoftBodyObject {
               vert.multiplyScalar(vert.dot(qs0));
               break;
           }
-          let totMass = thisMass + otherTetMass;
-          [p0, p1, p2, p3].forEach((p) => p.sub(vert.clone().multiplyScalar(thisMass / totMass)));
-          q.add(vert.clone().multiplyScalar(otherTetMass / totMass));
+          let totMass = thisMass + otherMass;
+          [p0, p1, p2, p3].forEach((p) => p.sub(vert.clone().multiplyScalar(otherMass / totMass)));
+          q.add(vert.clone().multiplyScalar(thisMass / totMass));
           return;
         });
       }
