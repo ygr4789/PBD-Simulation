@@ -1,4 +1,4 @@
-import * as vec from "./vector";
+import * as vec from "./util/vector";
 
 import { SoftBodyObject, ParsedObjData } from "./softBody";
 import { RigidSphere } from "./rigidSphere";

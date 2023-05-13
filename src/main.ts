@@ -2,15 +2,16 @@ import * as dat from "dat.gui";
 import * as Stats from "stats.js";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import * as vec from "./vector";
+import * as vec from "./util/vector";
 import { saveAs } from "file-saver";
 
 import { SoftBodyObject, ParsedObjData } from "./softBody";
 import { RigidSphere } from "./rigidSphere";
 import { checkCollision1, checkCollision2, solveCollision1, solveCollision2 } from "./collision";
-import { record } from "./record";
+import { cursorPoint, grabbedMesh, grabbedVertId, useMouseInteration } from "./interaction";
+import { record } from "./util/record";
 
-import { plotPoint, cleanAll, plotLine, emphasizePoint } from "./debug";
+import { plotPoint, cleanAll, plotLine, emphasizePoint } from "./util/debug";
 
 import "./style/style.css";
 
@@ -66,56 +67,6 @@ grid.position.set(0, 0.002, 0);
 
 // scene.add(grid);
 scene.add(ground);
-
-// ===================== INTERACTION =====================
-
-let cursorPoint = new THREE.Vector3();
-let grabbedMesh: THREE.Object3D | null = null;
-let grabbedVertId = -1;
-
-function useMouseInteration() {
-  const mouse = new THREE.Vector2();
-  const raycaster = new THREE.Raycaster();
-  const planeNormal = new THREE.Vector3();
-  const plane = new THREE.Plane();
-
-  window.addEventListener("mousemove", (e) => {
-    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-    raycaster.setFromCamera(mouse, camera);
-    raycaster.ray.intersectPlane(plane, cursorPoint);
-  });
-
-  window.addEventListener("mousedown", () => {
-    const intersects = raycaster.intersectObjects([...softbodies, ...spheres].map((obj) => obj.mesh));
-    if (intersects.length === 0) grabbedMesh = null;
-    else {
-      let grabbedPoint = intersects[0].point;
-      grabbedMesh = intersects[0].object;
-      planeNormal.copy(camera.position).normalize();
-      plane.setFromNormalAndCoplanarPoint(planeNormal, grabbedPoint);
-      orbitControl.enabled = false;
-
-      let closestDist = Number.MAX_VALUE;
-      for (let soft of softbodies) {
-        if (soft.mesh !== grabbedMesh) continue;
-        vec.setVec(vec.tmp, 0, grabbedPoint);
-        for (let i = 0; i < soft.vert_num; i++) {
-          let dist = vec.dist(vec.tmp, 0, soft.positions, i);
-          if (closestDist > dist) {
-            closestDist = dist;
-            grabbedVertId = i;
-          }
-        }
-      }
-    }
-  });
-
-  window.addEventListener("mouseup", () => {
-    grabbedMesh = null;
-    orbitControl.enabled = true;
-  });
-}
 
 // ===================== DATA =====================
 
@@ -236,7 +187,7 @@ function initGUI() {
   folder0.add(controls, "recImage").name("Capture Image");
   folder0.add(controls, "recVideo").name("Capture Video");
   folder0.add(controls, "recordingTime", 1, 60).step(1).name("Video Length (s)");
-  
+
   const folder1 = gui.addFolder("Control");
   folder1.add(controls, "toggle").name("Run / Pause");
   folder1.add(controls, "addObj").name("Add Object");
@@ -245,7 +196,8 @@ function initGUI() {
     .add(controls, "selectedObjectType", {
       SoftBody: 0,
       RigidBody: 1,
-    }).name("Object Type")
+    })
+    .name("Object Type")
     .onChange((id) => {
       controls.selectedObjectType = parseInt(id);
     });
@@ -255,7 +207,8 @@ function initGUI() {
       Egg: 1,
       Bear: 2,
       Heart: 3,
-    }).name("Shape")
+    })
+    .name("Shape")
     .onChange((id) => {
       controls.selectedData = parseInt(id);
       currentData = dataList[id];
@@ -332,7 +285,7 @@ function preventDefault() {
 
 window.onload = () => {
   preventDefault();
-  useMouseInteration();
+  useMouseInteration(camera, orbitControl, softbodies, spheres, );
   initGUI();
   main();
 };

@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import * as vec from "./vector";
-import { SpatialHash } from "./hash";
+import * as vec from "./util/vector";
+import { SpatialHash } from "./util/hash";
 
 const hashSpace = 0.05;
 const hashSize = 5000;
