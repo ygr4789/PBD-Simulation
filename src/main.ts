@@ -151,7 +151,8 @@ const controls = {
     }
   },
   reset: () => {
-    for (let soft of softbodies) {
+    while (softbodies.length > 0) {
+      let soft = softbodies.pop()!;
       soft.mesh.geometry.dispose();
       soft.edges.geometry.dispose();
       (soft.mesh.material as THREE.Material).dispose();
@@ -159,14 +160,12 @@ const controls = {
       scene.remove(soft.mesh);
       scene.remove(soft.edges);
     }
-    softbodies = [];
-
-    for (let sphere of spheres) {
+    while (spheres.length > 0) {
+      let sphere = spheres.pop()!;
       sphere.mesh.geometry.dispose();
       (sphere.mesh.material as THREE.Material).dispose();
       scene.remove(sphere.mesh);
     }
-    spheres = [];
   },
   selectedObjectType: 0,
   selectedData: 0,
@@ -227,8 +226,8 @@ function initGUI() {
 
 // ===================== MAIN =====================
 
-let softbodies: Array<SoftBodyObject> = [];
-let spheres: Array<RigidSphere> = [];
+const softbodies: Array<SoftBodyObject> = [];
+const spheres: Array<RigidSphere> = [];
 let isPlaying: Boolean = false;
 
 function main() {
@@ -285,7 +284,7 @@ function preventDefault() {
 
 window.onload = () => {
   preventDefault();
-  useMouseInteration(camera, orbitControl, softbodies, spheres, );
+  useMouseInteration(camera, orbitControl, softbodies, spheres);
   initGUI();
   main();
 };

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import * as vec from "./util/vector";
 import { SpatialHash } from "./util/hash";
+import { randomColor } from "./util/color";
 
 const hashSpace = 0.05;
 const hashSize = 5000;
@@ -83,7 +84,7 @@ export class SoftBodyObject {
     this.geometry.setIndex(new THREE.BufferAttribute(this.surface_ids, 1));
     this.geometry.setAttribute("position", new THREE.BufferAttribute(this.positions, 3));
 
-    const color = new THREE.Color(Math.random(), Math.random(), Math.random());
+    const color = randomColor();
     this.material = new THREE.MeshPhongMaterial({ color });
     this.mesh = new THREE.Mesh(this.geometry, this.material);
     this.mesh.geometry.computeVertexNormals();

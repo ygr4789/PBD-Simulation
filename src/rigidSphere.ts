@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { randomColor } from "./util/color";
 
 // ===================== BOUNDARY =====================
 
@@ -35,7 +36,7 @@ export class RigidSphere {
     this.radius = radius_;
     this.invMass = (4 * Math.PI) / this.radius ** 3;
 
-    const color = new THREE.Color(Math.random(), Math.random(), Math.random());
+    const color = randomColor();
     const sphereGeo = new THREE.SphereGeometry(this.radius);
     const sphereMat = new THREE.MeshPhongMaterial({ color });
     this.mesh = new THREE.Mesh(sphereGeo, sphereMat);
@@ -90,14 +91,16 @@ export class RigidSphere {
   }
 
   grabInteract(dt: number, target: THREE.Vector3, id: number) {
+    const updateRadio = 0.1;
     const prevPosition = this.position.clone();
     this.position.copy(target);
-    this.velocity.copy(
-      this.position
-        .clone()
-        .sub(prevPosition)
-        .multiplyScalar(1 / dt)
-    );
+    const instant = this.position
+      .clone()
+      .sub(prevPosition)
+      .multiplyScalar(1 / dt);
+    instant.multiplyScalar(updateRadio);
+    this.velocity.multiplyScalar(1 - updateRadio);
+    this.velocity.add(instant);
   }
 
   initLocation(x: number, y: number, z: number) {
