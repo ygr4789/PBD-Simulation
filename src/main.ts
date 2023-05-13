@@ -8,6 +8,7 @@ import { saveAs } from "file-saver";
 import { SoftBodyObject, ParsedObjData } from "./softBody";
 import { RigidSphere } from "./rigidSphere";
 import { checkCollision1, checkCollision2, solveCollision1, solveCollision2 } from "./collision";
+import { record } from "./record";
 
 import { plotPoint, cleanAll, plotLine, emphasizePoint } from "./debug";
 
@@ -66,7 +67,7 @@ grid.position.set(0, 0.002, 0);
 // scene.add(grid);
 scene.add(ground);
 
-// ===================== INTERATION =====================
+// ===================== INTERACTION =====================
 
 let cursorPoint = new THREE.Vector3();
 let grabbedMesh: THREE.Object3D | null = null;
@@ -129,24 +130,35 @@ let currentData: ParsedObjData = bunnyData;
 
 // ===================== CONTROL =====================
 
-const saveScreen = () => {
-  var canvas = document.querySelector("canvas") as HTMLCanvasElement;
-  var a = document.createElement("a");
-  a.href = canvas!.toDataURL("image/png").replace("image/png", "image/octet-stream");
-  a.download = `output.png`;
-  document.body.appendChild(a);
-  a.click();
-};
+var canvas = document.querySelector("canvas") as HTMLCanvasElement;
 
 const controls = {
-  debug: () => {},
+  recImage: () => {
+    canvas.toBlob((blob: Blob) => {
+      saveAs(blob, (1).toString() + ".png");
+    });
+  },
+  recVideo: () => {
+    const recording = record(canvas, controls.recordingTime * 1000);
+    // play it on another video element
+    let video$ = document.createElement("video");
+    recording.then((url: string) => video$.setAttribute("src", url));
+    // download it
+    let link$ = document.createElement("a");
+    link$.setAttribute("download", "recordingVideo");
+    recording.then((url: string) => {
+      link$.setAttribute("href", url);
+      link$.click();
+    });
+  },
+  recordingTime: 5,
   toggle: () => {
     isPlaying = !isPlaying;
   },
-  add: () => {
+  addObj: () => {
     let height = 1.5;
     let cnt = 0;
-    switch (controls.selectedModel) {
+    switch (controls.selectedObjectType) {
       case 0:
         const soft = new SoftBodyObject(currentData, scene);
         while (true) {
@@ -162,7 +174,7 @@ const controls = {
             softbodies.push(soft);
             break;
           }
-          if(++cnt > 5) height += 1.5;
+          if (++cnt > 5) height += 1.5;
         }
         break;
       case 1:
@@ -182,7 +194,7 @@ const controls = {
             spheres.push(sphere);
             break;
           }
-          if(++cnt > 5) height += 1.5;
+          if (++cnt > 5) height += 1.5;
         }
         break;
     }
@@ -205,7 +217,7 @@ const controls = {
     }
     spheres = [];
   },
-  selectedModel: 0,
+  selectedObjectType: 0,
   selectedData: 0,
   numSubSteps: 10,
   timeStepSize: 13,
@@ -220,18 +232,22 @@ const controls = {
 function initGUI() {
   const gui = new dat.GUI();
 
+  const folder0 = gui.addFolder("Record");
+  folder0.add(controls, "recImage").name("Capture Image");
+  folder0.add(controls, "recVideo").name("Capture Video");
+  folder0.add(controls, "recordingTime", 1, 60).step(1).name("Video Length (s)");
+  
   const folder1 = gui.addFolder("Control");
-  // folder1.add(controls, "debug").name("Debug");
   folder1.add(controls, "toggle").name("Run / Pause");
-  folder1.add(controls, "add").name("Add Object");
+  folder1.add(controls, "addObj").name("Add Object");
   folder1.add(controls, "reset").name("Reset");
   folder1
-    .add(controls, "selectedModel", {
+    .add(controls, "selectedObjectType", {
       SoftBody: 0,
       RigidBody: 1,
-    })
+    }).name("Object Type")
     .onChange((id) => {
-      controls.selectedModel = parseInt(id);
+      controls.selectedObjectType = parseInt(id);
     });
   folder1
     .add(controls, "selectedData", {
@@ -239,7 +255,7 @@ function initGUI() {
       Egg: 1,
       Bear: 2,
       Heart: 3,
-    })
+    }).name("Shape")
     .onChange((id) => {
       controls.selectedData = parseInt(id);
       currentData = dataList[id];
@@ -247,8 +263,8 @@ function initGUI() {
   folder1.add(controls, "radius", 0.1, 1).step(0.1).name("Radius");
 
   const folder2 = gui.addFolder("Simulation");
-  folder2.add(controls, "numSubSteps", 1, 50).name("Sub Step");
-  folder2.add(controls, "timeStepSize", 1, 100).name("Time Step (ms)");
+  folder2.add(controls, "numSubSteps", 1, 50).step(1).name("Sub Step");
+  folder2.add(controls, "timeStepSize", 1, 100).step(1).name("Time Step (ms)");
   folder2.add(controls, "collisionCheck").name("Collision Check");
 
   const folder3 = gui.addFolder("Parameters");
