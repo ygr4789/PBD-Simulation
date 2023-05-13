@@ -7,7 +7,7 @@ import { saveAs } from "file-saver";
 
 import { SoftBodyObject, ParsedObjData } from "./softBody";
 import { RigidSphere } from "./rigidSphere";
-import { solveCollision1, solveCollision2 } from "./collision";
+import { checkCollision1, checkCollision2, solveCollision1, solveCollision2 } from "./collision";
 
 import { plotPoint, cleanAll, plotLine, emphasizePoint } from "./debug";
 
@@ -144,16 +144,46 @@ const controls = {
     isPlaying = !isPlaying;
   },
   add: () => {
+    let height = 1.5;
+    let cnt = 0;
     switch (controls.selectedModel) {
       case 0:
         const soft = new SoftBodyObject(currentData, scene);
-        soft.initLocation(5 * (0.5 - Math.random()), 1.5, 5 * (0.5 - Math.random()));
-        softbodies.push(soft);
+        while (true) {
+          let detectedCollisoin = false;
+          soft.initLocation(bound * (0.5 - Math.random()), height, bound * (0.5 - Math.random()));
+          for (let other of softbodies) {
+            if (checkCollision1(soft, other)) detectedCollisoin = true;
+          }
+          for (let other of spheres) {
+            if (checkCollision2(soft, other)) detectedCollisoin = true;
+          }
+          if (!detectedCollisoin) {
+            softbodies.push(soft);
+            break;
+          }
+          if(++cnt > 5) height += 1.5;
+        }
         break;
       case 1:
         const sphere = new RigidSphere(controls.radius, scene);
-        sphere.initLocation(5 * (0.5 - Math.random()), 1.5, 5 * (0.5 - Math.random()));
-        spheres.push(sphere);
+        while (true) {
+          let detectedCollisoin = false;
+          sphere.initLocation(bound * (0.5 - Math.random()), height, bound * (0.5 - Math.random()));
+          for (let other of softbodies) {
+            if (checkCollision2(other, sphere)) detectedCollisoin = true;
+          }
+          for (let other of spheres) {
+            let dist = sphere.position.distanceTo(other.position);
+            let minDist = sphere.radius + other.radius;
+            if (dist < minDist) detectedCollisoin = true;
+          }
+          if (!detectedCollisoin) {
+            spheres.push(sphere);
+            break;
+          }
+          if(++cnt > 5) height += 1.5;
+        }
         break;
     }
   },
