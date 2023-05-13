@@ -20,6 +20,7 @@
     "@babel/core": "^7.21.4",
     "@babel/preset-typescript": "^7.21.4",
     "@types/dat.gui": "^0.7.10",
+    "@types/file-saver": "^2.0.5",
     "@types/gl-matrix": "^3.2.0",
     "@types/stats.js": "^0.17.0",
     "@types/three": "^0.150.0",
@@ -38,6 +39,7 @@
   },
   "dependencies": {
     "dat.gui": "^0.7.9",
+    "file-saver": "^2.0.5",
     "gl-matrix": "^3.4.3",
     "stats.js": "^0.17.0",
     "three": "^0.151.3"

@@ -3,6 +3,7 @@ import * as Stats from "stats.js";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import * as vec from "./vector";
+import { saveAs } from "file-saver";
 
 import { SoftBodyObject, ParsedObjData } from "./softBody";
 import { RigidSphere } from "./rigidSphere";
@@ -128,11 +129,17 @@ let currentData: ParsedObjData = bunnyData;
 
 // ===================== CONTROL =====================
 
+const saveScreen = () => {
+  var canvas = document.querySelector("canvas") as HTMLCanvasElement;
+  var a = document.createElement("a");
+  a.href = canvas!.toDataURL("image/png").replace("image/png", "image/octet-stream");
+  a.download = `output.png`;
+  document.body.appendChild(a);
+  a.click();
+};
+
 const controls = {
-  debug: () => {
-    updateStates(controls.timeStepSize / 1000);
-    renderer.render(scene, camera);
-  },
+  debug: () => {},
   toggle: () => {
     isPlaying = !isPlaying;
   },
@@ -140,12 +147,12 @@ const controls = {
     switch (controls.selectedModel) {
       case 0:
         const soft = new SoftBodyObject(currentData, scene);
-        soft.move(5 * (0.5 - Math.random()), 1.5, 5 * (0.5 - Math.random()));
+        soft.initLocation(5 * (0.5 - Math.random()), 1.5, 5 * (0.5 - Math.random()));
         softbodies.push(soft);
         break;
       case 1:
         const sphere = new RigidSphere(controls.radius, scene);
-        sphere.move(5 * (0.5 - Math.random()), 1.5, 5 * (0.5 - Math.random()));
+        sphere.initLocation(5 * (0.5 - Math.random()), 1.5, 5 * (0.5 - Math.random()));
         spheres.push(sphere);
         break;
     }
@@ -237,10 +244,8 @@ function main() {
     let timediff = (currTime - prevTime) / 1000;
     prevTime = currTime;
     requestAnimationFrame(animate);
-    // setTimeout(animate, controls.timeStepSize);
     stats.begin();
     if (isPlaying) updateStates(controls.timeStepSize / 1000);
-    // if (isPlaying) updateStates(timediff);
     renderer.render(scene, camera);
     stats.end();
   }

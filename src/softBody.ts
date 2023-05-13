@@ -37,6 +37,7 @@ const boundNormal = new Float32Array([
 // ===================== SOFTBODY =====================
 
 export class SoftBodyObject {
+  init_positions: Float32Array;
   prev_positions: Float32Array;
   positions: Float32Array;
   velocities: Float32Array;
@@ -61,10 +62,12 @@ export class SoftBodyObject {
 
   spatial_hash: SpatialHash;
   hash_space: number;
-  is_surface: Array<boolean>;
+  is_surface_vert: Array<boolean>;
+  is_surface_tet: Array<boolean>;
   vert_tets: Array<Array<number>>;
 
   constructor(file: ParsedObjData, scene_: THREE.Scene) {
+    this.init_positions = new Float32Array(file.verts);
     this.prev_positions = new Float32Array(file.verts);
     this.positions = new Float32Array(file.verts);
     this.velocities = new Float32Array(file.verts.length);
@@ -96,22 +99,29 @@ export class SoftBodyObject {
     this.edges = new THREE.LineSegments(this.edge_geometry, new THREE.LineBasicMaterial({ color: 0xffffff }));
     // scene_.add(this.edges);
 
-    this.is_surface = new Array(this.vert_num);
-    for (let id of file.tetSurfaceTriIds) this.is_surface[id] = true;
-
+    
     // Calculate Constrains
     this.vert_tets = new Array(this.vert_num);
     this.inv_masses = new Float32Array(this.vert_num);
     for (let i = 0; i < this.vert_num; i++) this.vert_tets[i] = new Array();
     this.init_tet_volumes = new Float32Array(this.tet_num);
+    
+    this.is_surface_vert = new Array(this.vert_num);
+    this.is_surface_vert.fill(false);
+    for (let id of file.tetSurfaceTriIds) this.is_surface_vert[id] = true;
 
     this.hash_space = hashSpace;
+    this.is_surface_tet = new Array(this.tet_num);
+    this.is_surface_tet.fill(false);
     for (let i = 0; i < this.tet_num; i++) {
       let x = new Float32Array(4);
+      let cnt = 0;
       for (let j = 0; j < 4; j++) {
         x[j] = this.tet_ids[4 * i + j];
         this.vert_tets[x[j]].push(i);
+        if(this.is_surface_vert[x[j]]) cnt++;
       }
+      if(cnt === 3) this.is_surface_tet[i] = true;
 
       for (let j = 0; j < 4; j++) {
         vec.sub(vec.seg, j, this.positions, x[(j + 1) % 4], this.positions, x[j % 4]);
@@ -241,11 +251,11 @@ export class SoftBodyObject {
     }
   }
 
-  move(x: number, y: number, z: number) {
+  initLocation(x: number, y: number, z: number) {
     for (let i = 0; i < this.vert_num; i++) {
-      this.positions[3 * i] += x;
-      this.positions[3 * i + 1] += y;
-      this.positions[3 * i + 2] += z;
+      this.positions[3 * i] = this.init_positions[3 * i] + x;
+      this.positions[3 * i + 1] = this.init_positions[3 * i + 1] + y;
+      this.positions[3 * i + 2] = this.init_positions[3 * i + 2] + z;
     }
   }
 }

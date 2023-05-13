@@ -71,7 +71,7 @@ export class RigidSphere {
   }
   handleBoundaries() {
     const restitution = 0.5;
-    for (let k = 0; k < boundPositions.length; k++) {
+    for (let k = 0; k < bound_num; k++) {
       const gap = this.position.clone().sub(boundPositions[k]).dot(boundNormals[k]) - this.radius;
       const proj = this.velocity.dot(boundNormals[k]);
       if (gap < 0.01 && proj < 0) {
@@ -100,8 +100,8 @@ export class RigidSphere {
     );
   }
 
-  move(x: number, y: number, z: number) {
-    this.position.add(new THREE.Vector3(x, y, z));
+  initLocation(x: number, y: number, z: number) {
+    this.position.set(x, y, z);
     this.renderUpdate();
   }
 }
