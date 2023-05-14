@@ -101,13 +101,12 @@ export class SoftBodyObject {
     scene_.add(this.edges);
     this.edges.visible = false;
 
-    
     // Calculate Constrains
     this.vert_tets = new Array(this.vert_num);
     this.inv_masses = new Float32Array(this.vert_num);
     for (let i = 0; i < this.vert_num; i++) this.vert_tets[i] = new Array();
     this.init_tet_volumes = new Float32Array(this.tet_num);
-    
+
     this.is_surface_vert = new Array(this.vert_num);
     this.is_surface_vert.fill(false);
     for (let id of file.tetSurfaceTriIds) this.is_surface_vert[id] = true;
@@ -121,9 +120,9 @@ export class SoftBodyObject {
       for (let j = 0; j < 4; j++) {
         x[j] = this.tet_ids[4 * i + j];
         this.vert_tets[x[j]].push(i);
-        if(this.is_surface_vert[x[j]]) cnt++;
+        if (this.is_surface_vert[x[j]]) cnt++;
       }
-      if(cnt === 3) this.is_surface_tet[i] = true;
+      if (cnt === 3) this.is_surface_tet[i] = true;
 
       for (let j = 0; j < 4; j++) {
         vec.sub(vec.seg, j, this.positions, x[(j + 1) % 4], this.positions, x[j % 4]);
@@ -172,9 +171,11 @@ export class SoftBodyObject {
       this.positions[i] += value * dt;
     });
   }
+
   grabInteract(dt: number, target: THREE.Vector3, id: number) {
     vec.setVec(this.positions, id, target);
   }
+
   solveVolumeConstraints(dt: number) {
     for (let i = 0; i < this.tet_num; i++) {
       let x = new Uint16Array(4);
@@ -206,6 +207,7 @@ export class SoftBodyObject {
       }
     }
   }
+
   solveLengthConstraints(dt: number, alpha: number) {
     for (let i = 0; i < this.edge_num; i++) {
       let x = new Uint16Array(2);
@@ -254,5 +256,14 @@ export class SoftBodyObject {
       this.positions[3 * i + 1] = this.init_positions[3 * i + 1] + y;
       this.positions[3 * i + 2] = this.init_positions[3 * i + 2] + z;
     }
+  }
+
+  remove(scene: THREE.Scene) {
+    this.mesh.geometry.dispose();
+    (this.mesh.material as THREE.Material).dispose();
+    scene.remove(this.mesh);
+    (this.edges.material as THREE.Material).dispose();
+    this.edges.geometry.dispose();
+    scene.remove(this.edges);
   }
 }

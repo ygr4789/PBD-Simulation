@@ -1,12 +1,56 @@
 import * as vec from "./util/vector";
 
-import { SoftBodyObject, ParsedMsh } from "./softBody";
-import { RigidSphere } from "./rigidSphere";
+import { SoftBodyObject } from "./softBody";
+import { RigidSphereObject } from "./rigidSphere";
 
-// ===================== COLLISION ====================
+const restitution = 0.5;
 
-export function checkCollision1(obj1: SoftBodyObject, obj2: SoftBodyObject) {
-  if (obj2 === obj1) return false;
+export function checkCollision(obj1: SoftBodyObject | RigidSphereObject, obj2: SoftBodyObject | RigidSphereObject) {
+  if (obj1 === obj2) return false;
+  if (obj1 instanceof SoftBodyObject && obj2 instanceof SoftBodyObject) {
+    return checkSoftToSoftCollision(obj1, obj2);
+  } else if (obj1 instanceof SoftBodyObject && obj2 instanceof RigidSphereObject) {
+    return checkSoftToRigidCollision(obj1, obj2);
+  } else if (obj1 instanceof RigidSphereObject && obj2 instanceof SoftBodyObject) {
+    return checkSoftToRigidCollision(obj2, obj1);
+  } else if (obj1 instanceof RigidSphereObject && obj2 instanceof RigidSphereObject) {
+    return checkRigidToRigidCollision(obj1, obj2);
+  }
+  return false;
+}
+
+export function solveCollision(obj1: SoftBodyObject | RigidSphereObject, obj2: SoftBodyObject | RigidSphereObject, dt: number) {
+  if (obj1 === obj2) return;
+  if (obj1 instanceof SoftBodyObject && obj2 instanceof SoftBodyObject) {
+    solveSoftToSoftCollision(obj1, obj2);
+  } else if (obj1 instanceof SoftBodyObject && obj2 instanceof RigidSphereObject) {
+    solveSoftToRigidCollision(obj1, obj2, dt);
+  } else if (obj1 instanceof RigidSphereObject && obj2 instanceof SoftBodyObject) {
+    solveSoftToRigidCollision(obj2, obj1, dt);
+  } else if (obj1 instanceof RigidSphereObject && obj2 instanceof RigidSphereObject) {
+    solveRigidToRigidCollision(obj1, obj2);
+  }
+}
+
+// ===================== CHECK COLLISION ====================
+
+function checkRigidToRigidCollision(obj1: RigidSphereObject, obj2: RigidSphereObject) {
+  let dist = obj1.position.distanceTo(obj2.position);
+  let minDist = obj1.radius + obj2.radius;
+  return dist < minDist;
+}
+
+function checkSoftToRigidCollision(soft: SoftBodyObject, rigid: RigidSphereObject) {
+  for (let i = 0; i < soft.vert_num; i++) {
+    vec.setVec(vec.tmp, 0, rigid.position);
+    vec.subi(vec.tmp, 0, soft.positions, i);
+    let gap = vec.norm(vec.tmp, 0) - rigid.radius;
+    if (gap < 0) return true;
+  }
+  return false;
+}
+
+function checkSoftToSoftCollision(obj1: SoftBodyObject, obj2: SoftBodyObject) {
   for (let i = 0; i < obj2.vert_num; i++) {
     for (let j = 0; j < obj1.tet_num; j++) {
       let p = new Float32Array(4);
@@ -36,8 +80,9 @@ export function checkCollision1(obj1: SoftBodyObject, obj2: SoftBodyObject) {
   return false;
 }
 
-export function solveCollision1(obj1: SoftBodyObject, obj2: SoftBodyObject) {
-  if (obj2 === obj1) return;
+// ===================== SOLVE COLLISION ====================
+
+function solveSoftToSoftCollision(obj1: SoftBodyObject, obj2: SoftBodyObject) {
   for (let i = 0; i < obj2.vert_num; i++) {
     let closeIds = obj1.spatial_hash.query(obj2.positions, i, obj1.hash_space);
     // let closeIds_naive = Array.from(Array(obj1.edge_num).keys());
@@ -95,25 +140,12 @@ export function solveCollision1(obj1: SoftBodyObject, obj2: SoftBodyObject) {
   }
 }
 
-// ===================== COLLISION ====================
-
-export function checkCollision2(soft: SoftBodyObject, rigid: RigidSphere) {
-  for (let i = 0; i < soft.vert_num; i++) {
-    vec.setVec(vec.tmp, 0, rigid.position);
-    vec.subi(vec.tmp, 0, soft.positions, i);
-    let gap = vec.norm(vec.tmp, 0) - rigid.radius;
-    if (gap < 0) return true;
-  }
-  return false;
-}
-
-export function solveCollision2(soft: SoftBodyObject, rigid: RigidSphere, dt: number) {
+function solveSoftToRigidCollision(soft: SoftBodyObject, rigid: RigidSphereObject, dt: number) {
   for (let i = 0; i < soft.vert_num; i++) {
     vec.setVec(vec.tmp, 0, rigid.position);
     vec.subi(vec.tmp, 0, soft.positions, i);
     let gap = vec.norm(vec.tmp, 0) - rigid.radius;
     if (gap < 0) {
-      console.log("detect");
       vec.normalize(vec.tmp, 0);
       vec.scale(vec.tmp, 0, gap);
       vec.mv(vec.tmp, 1, soft.positions, i);
@@ -123,5 +155,19 @@ export function solveCollision2(soft: SoftBodyObject, rigid: RigidSphere, dt: nu
 
       rigid.velocity.sub(vec.toVec(vec.tmp, 0).multiplyScalar(I * rigid.invMass));
     }
+  }
+}
+
+function solveRigidToRigidCollision(obj1: RigidSphereObject, obj2: RigidSphereObject) {
+  const dir = obj2.position.clone().sub(obj1.position);
+  const gap = dir.length() - obj2.radius - obj1.radius;
+  const relProj = dir.dot(obj2.velocity.clone().sub(obj1.velocity));
+  dir.normalize();
+  if (gap < 0.01 && relProj < 0) {
+    obj2.velocity.add(dir.clone().multiplyScalar(-relProj * restitution));
+    obj1.velocity.add(dir.clone().multiplyScalar(relProj * restitution));
+  }
+  if (gap < 0) {
+    obj2.position.add(dir.clone().multiplyScalar(-gap));
   }
 }

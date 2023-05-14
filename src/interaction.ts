@@ -3,7 +3,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import * as vec from "./util/vector";
 import { SoftBodyObject } from "./softBody";
-import { RigidSphere } from "./rigidSphere";
+import { RigidSphereObject } from "./rigidSphere";
 
 // ================ MOUSE INTERACTION ================
 
@@ -14,8 +14,7 @@ export let grabbedVertId = -1;
 export function useMouseInteration(
   camera: THREE.Camera,
   control: OrbitControls,
-  softbodies: Array<SoftBodyObject>,
-  spheres: Array<RigidSphere>
+  objects: Array<SoftBodyObject | RigidSphereObject>
 ) {
   const mouse = new THREE.Vector2();
   const raycaster = new THREE.Raycaster();
@@ -30,7 +29,7 @@ export function useMouseInteration(
   });
 
   window.addEventListener("mousedown", () => {
-    const intersects = raycaster.intersectObjects([...softbodies, ...spheres].map((obj) => obj.mesh));
+    const intersects = raycaster.intersectObjects(objects.map((obj) => obj.mesh));
     if (intersects.length === 0) grabbedMesh = null;
     else {
       let grabbedPoint = intersects[0].point;
@@ -40,11 +39,12 @@ export function useMouseInteration(
       control.enabled = false;
 
       let closestDist = Number.MAX_VALUE;
-      for (let soft of softbodies) {
-        if (soft.mesh !== grabbedMesh) continue;
+      for (let obj of objects) {
+        if (!(obj instanceof SoftBodyObject)) continue;
+        if (obj.mesh !== grabbedMesh) continue;
         vec.setVec(vec.tmp, 0, grabbedPoint);
-        for (let i = 0; i < soft.vert_num; i++) {
-          let dist = vec.dist(vec.tmp, 0, soft.positions, i);
+        for (let i = 0; i < obj.vert_num; i++) {
+          let dist = vec.dist(vec.tmp, 0, obj.positions, i);
           if (closestDist > dist) {
             closestDist = dist;
             grabbedVertId = i;

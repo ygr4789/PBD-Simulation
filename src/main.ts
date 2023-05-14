@@ -4,8 +4,8 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import { SoftBodyObject, ParsedMsh } from "./softBody";
-import { RigidSphere } from "./rigidSphere";
-import { checkCollision1, checkCollision2, solveCollision1, solveCollision2 } from "./collision";
+import { RigidSphereObject } from "./rigidSphere";
+import { checkCollision, solveCollision } from "./collision";
 import { cursorPoint, grabbedMesh, grabbedVertId, useMouseInteration } from "./interaction";
 import { captureCanvas, recordCanvas, zipFileSaver } from "./util/record";
 
@@ -90,8 +90,10 @@ const controls = {
     dirLight.visible = !dirLight.visible;
     grid.visible = !grid.visible;
     renderer.shadowMap.enabled = !renderer.shadowMap.enabled;
-    softbodies.forEach((soft) => {
-      soft.edges.visible = !dirLight.visible;
+    objects.forEach((object) => {
+      if (object instanceof SoftBodyObject) {
+        object.edges.visible = !dirLight.visible;
+      }
     });
   },
   burstShot: () => {
@@ -114,63 +116,33 @@ const controls = {
   },
   addObj: () => {
     let height = 1.5;
+    let object;
     switch (controls.selectedObjectType) {
       case 0:
-        const soft = new SoftBodyObject(currentData, scene);
-        soft.edges.visible = !dirLight.visible;
-        while (true) {
-          let detectedCollisoin = false;
-          soft.initLocation(bound * (0.5 - Math.random()), height, bound * (0.5 - Math.random()));
-          for (let other of softbodies) {
-            if (checkCollision1(soft, other)) detectedCollisoin = true;
-          }
-          for (let other of spheres) {
-            if (checkCollision2(soft, other)) detectedCollisoin = true;
-          }
-          if (!detectedCollisoin) {
-            softbodies.push(soft);
-            break;
-          }
-          height += 1.5;
-        }
+        object = new SoftBodyObject(currentData, scene);
+        object.edges.visible = !dirLight.visible;
         break;
-      case 1:
-        const sphere = new RigidSphere(controls.radius, scene);
-        while (true) {
-          let detectedCollisoin = false;
-          sphere.initLocation(bound * (0.5 - Math.random()), height, bound * (0.5 - Math.random()));
-          for (let other of softbodies) {
-            if (checkCollision2(other, sphere)) detectedCollisoin = true;
-          }
-          for (let other of spheres) {
-            let dist = sphere.position.distanceTo(other.position);
-            let minDist = sphere.radius + other.radius;
-            if (dist < minDist) detectedCollisoin = true;
-          }
-          if (!detectedCollisoin) {
-            spheres.push(sphere);
-            break;
-          }
-          height += 1.5;
-        }
+      default:
+        object = new RigidSphereObject(controls.radius, scene);
         break;
+    }
+    while (true) {
+      let detectedCollisoin = false;
+      object.initLocation(bound * (0.5 - Math.random()), height, bound * (0.5 - Math.random()));
+      for (let other of objects) {
+        if (checkCollision(object, other)) detectedCollisoin = true;
+      }
+      if (!detectedCollisoin) {
+        objects.push(object);
+        break;
+      }
+      height += 1.5;
     }
   },
   reset: () => {
-    while (softbodies.length > 0) {
-      let soft = softbodies.pop()!;
-      soft.mesh.geometry.dispose();
-      soft.edges.geometry.dispose();
-      (soft.mesh.material as THREE.Material).dispose();
-      (soft.edges.material as THREE.Material).dispose();
-      scene.remove(soft.mesh);
-      scene.remove(soft.edges);
-    }
-    while (spheres.length > 0) {
-      let sphere = spheres.pop()!;
-      sphere.mesh.geometry.dispose();
-      (sphere.mesh.material as THREE.Material).dispose();
-      scene.remove(sphere.mesh);
+    while (objects.length > 0) {
+      let object = objects.pop()!;
+      object.remove(scene);
     }
   },
   selectedObjectType: 0,
@@ -234,8 +206,7 @@ function initGUI() {
 
 // ===================== MAIN =====================
 
-const softbodies: Array<SoftBodyObject> = [];
-const spheres: Array<RigidSphere> = [];
+const objects: Array<SoftBodyObject | RigidSphereObject> = [];
 let isPlaying: Boolean = false;
 
 function main() {
@@ -261,30 +232,31 @@ function main() {
 }
 
 function updateStates(dt: number) {
-  for (let object of [...softbodies, ...spheres]) {
+  for (let object of objects) {
     object.applyStates(dt, controls.gravity);
     if (grabbedMesh === object.mesh) object.grabInteract(dt, cursorPoint, grabbedVertId);
   }
   for (let n = 0; n < controls.numSubSteps; n++) {
-    for (let soft of softbodies) {
-      soft.solveVolumeConstraints(dt);
-      soft.solveLengthConstraints(dt, controls.invStiffness);
-      if (controls.collisionCheck) {
-        soft.spatial_hash.update();
-        for (let other of softbodies) solveCollision1(soft, other);
-        for (let sphere of spheres) solveCollision2(soft, sphere, dt);
+    for (let object of objects) {
+      if (object instanceof SoftBodyObject) {
+        object.solveVolumeConstraints(dt);
+        object.solveLengthConstraints(dt, controls.invStiffness);
       }
-      soft.handleBoundaries();
-    }
-    for (let sphere of spheres) {
-      sphere.handleCollision(spheres);
-      sphere.handleBoundaries();
+      if (controls.collisionCheck) {
+        if (object instanceof SoftBodyObject) {
+          object.spatial_hash.update();
+        }
+        for (let other of objects) {
+          solveCollision(object, other, dt);
+        }
+      }
+      object.handleBoundaries();
     }
   }
-  for (let soft of softbodies) {
-    soft.updateVelocities(dt);
-  }
-  for (let object of [...softbodies, ...spheres]) {
+  for (let object of objects) {
+    if (object instanceof SoftBodyObject) {
+      object.updateVelocities(dt);
+    }
     object.renderUpdate();
   }
 }
@@ -296,7 +268,7 @@ function preventDefault() {
 
 window.onload = () => {
   preventDefault();
-  useMouseInteration(camera, orbitControl, softbodies, spheres);
+  useMouseInteration(camera, orbitControl, objects);
   initGUI();
   main();
 };

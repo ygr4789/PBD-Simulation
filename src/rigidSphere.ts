@@ -23,7 +23,7 @@ const boundNormals = [
 
 // ===================== RIGIDSPHERE =====================
 
-export class RigidSphere {
+export class RigidSphereObject {
   position: THREE.Vector3;
   velocity: THREE.Vector3;
   invMass: number;
@@ -53,23 +53,7 @@ export class RigidSphere {
     this.velocity.add(new THREE.Vector3(0, -gravity * dt, 0));
     this.position.add(this.velocity.clone().multiplyScalar(dt));
   }
-  handleCollision(spheres: Array<RigidSphere>) {
-    const restitution = 0.5;
-    for (let other of spheres) {
-      if (other === this) continue;
-      const dir = this.position.clone().sub(other.position);
-      const gap = dir.length() - this.radius - other.radius;
-      const relProj = dir.dot(this.velocity.clone().sub(other.velocity));
-      dir.normalize();
-      if (gap < 0.01 && relProj < 0) {
-        this.velocity.add(dir.clone().multiplyScalar(-relProj * restitution));
-        other.velocity.add(dir.clone().multiplyScalar(relProj * restitution));
-      }
-      if (gap < 0) {
-        this.position.add(dir.clone().multiplyScalar(-gap));
-      }
-    }
-  }
+  
   handleBoundaries() {
     const restitution = 0.5;
     for (let k = 0; k < bound_num; k++) {
@@ -82,12 +66,6 @@ export class RigidSphere {
         this.position.add(boundNormals[k].clone().multiplyScalar(-gap));
       }
     }
-  }
-
-  reset() {
-    this.position = new THREE.Vector3();
-    this.velocity = new THREE.Vector3();
-    this.renderUpdate();
   }
 
   grabInteract(dt: number, target: THREE.Vector3, id: number) {
@@ -106,5 +84,11 @@ export class RigidSphere {
   initLocation(x: number, y: number, z: number) {
     this.position.set(x, y, z);
     this.renderUpdate();
+  }
+
+  remove(scene: THREE.Scene) {
+    this.mesh.geometry.dispose();
+    (this.mesh.material as THREE.Material).dispose();
+    scene.remove(this.mesh);
   }
 }
