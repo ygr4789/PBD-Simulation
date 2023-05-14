@@ -49,6 +49,8 @@ scene.add(ambientLight);
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
 dirLight.position.set(30, 30, 0);
 dirLight.castShadow = true;
+dirLight.shadow.mapSize.width = 2048;
+dirLight.shadow.mapSize.height = 2048;
 scene.add(dirLight);
 
 // ================ Creating Ground ================

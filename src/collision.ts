@@ -62,16 +62,13 @@ export function solveCollision1(obj1: SoftBodyObject, obj2: SoftBodyObject) {
           vec.sub(vec.tmp, 0, obj2.positions, i, obj1.positions, p[3]);
           vec.setMat(vec.seg, 0, vec.seg, 1, vec.seg, 2);
           let det = vec.invMat();
-          if (det == 0.0) return;
+          if (det === 0) return;
           vec.applyMat(vec.tmp, 0);
 
-          let isInTet = true;
-          let w = vec.toArr(vec.tmp, 0);
-          if (1 - w[0] - w[1] - w[2] < 0) isInTet = false;
-          w.forEach((val) => {
-            if (val < 0) isInTet = false;
-          });
-          if (!isInTet) return;
+          for (let k = 0; k < 3; k++) {
+            if (vec.tmp[k] < 0) return;
+          }
+          if (vec.tmp[0] + vec.tmp[1] + vec.tmp[2] > 1) return;
 
           vec.sub(vec.seg, 0, obj1.positions, s[0], obj2.positions, i);
           vec.sub(vec.seg, 1, obj1.positions, s[1], obj1.positions, s[0]);
@@ -80,10 +77,17 @@ export function solveCollision1(obj1: SoftBodyObject, obj2: SoftBodyObject) {
           vec.normalize(vec.tmp, 0);
           var mag = vec.dot(vec.tmp, 0, vec.seg, 0);
           vec.scale(vec.tmp, 0, mag);
+
+          let m1 = 0,
+            m2 = 1 / obj2.inv_masses[i];
           for (let k = 0; k < 4; k++) {
-            vec.subi(obj1.positions, p[k], vec.tmp, 0, 1);
+            m1 += 1 / obj1.inv_masses[k];
           }
-          vec.addi(obj2.positions, i, vec.tmp, 0, 1);
+
+          for (let k = 0; k < 4; k++) {
+            vec.subi(obj1.positions, p[k], vec.tmp, 0, m2 / 4 / (m1 + m2));
+          }
+          vec.addi(obj2.positions, i, vec.tmp, 0, m1 / (m1 + m2));
           return;
         });
       }

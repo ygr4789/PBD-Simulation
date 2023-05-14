@@ -75,9 +75,9 @@ export function applyMat(rd: Float32Array, i: number) {
   let x = rd[3 * i + 0];
   let y = rd[3 * i + 1];
   let z = rd[3 * i + 2];
-  rd[0] = x * mat[0] + y * mat[3] + z * mat[6];
-  rd[1] = x * mat[1] + y * mat[4] + z * mat[7];
-  rd[2] = x * mat[2] + y * mat[5] + z * mat[8];
+  rd[3 * i + 0] = x * mat[0] + y * mat[1] + z * mat[2];
+  rd[3 * i + 1] = x * mat[3] + y * mat[4] + z * mat[5];
+  rd[3 * i + 2] = x * mat[6] + y * mat[7] + z * mat[8];
 }
 
 export function setMat(e1: Float32Array, i1: number, e2: Float32Array, i2: number, e3: Float32Array, i3: number) {
@@ -107,7 +107,7 @@ export function invMat() {
   let b21 = a21 * a10 - a11 * a20;
   // Calculate the determinant
   let det = a00 * b01 + a01 * b11 + a02 * b21;
-  if (!det) return 0.0;
+  if (!det) return 0;
   det = 1.0 / det;
   mat[0] = b01 * det;
   mat[1] = (-a22 * a01 + a02 * a21) * det;
@@ -118,7 +118,7 @@ export function invMat() {
   mat[6] = b21 * det;
   mat[7] = (-a21 * a00 + a01 * a20) * det;
   mat[8] = (a11 * a00 - a01 * a10) * det;
-  return det;
+  return 1;
 }
 
 export function toArr(rd: Float32Array, i: number) {
