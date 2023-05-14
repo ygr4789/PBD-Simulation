@@ -98,7 +98,8 @@ export class SoftBodyObject {
     this.edge_geometry.setAttribute("position", new THREE.BufferAttribute(this.positions, 3));
 
     this.edges = new THREE.LineSegments(this.edge_geometry, new THREE.LineBasicMaterial({ color: 0xffffff }));
-    // scene_.add(this.edges);
+    scene_.add(this.edges);
+    this.edges.visible = false;
 
     
     // Calculate Constrains

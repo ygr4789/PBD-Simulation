@@ -62,12 +62,13 @@ const groundMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 155,
 const ground = new THREE.Mesh(groundGeo, groundMat);
 ground.rotation.x = -Math.PI * 0.5;
 ground.receiveShadow = true;
-const grid = new THREE.GridHelper(2 * bound, 2 * bound);
+const grid = new THREE.GridHelper(2 * bound, 2 * bound, 0xffffff, 0xaaaaaa);
 (grid.material as THREE.Material).opacity = 1.0;
 (grid.material as THREE.Material).transparent = true;
 grid.position.set(0, 0.002, 0);
 
-// scene.add(grid);
+scene.add(grid);
+grid.visible = false;
 scene.add(ground);
 
 // ===================== DATA =====================
@@ -86,6 +87,14 @@ let currentData: ParsedObjData = bunnyData;
 var canvas = document.querySelector("canvas") as HTMLCanvasElement;
 
 const controls = {
+  toggleVisibility: () => {
+    dirLight.visible = !dirLight.visible;
+    grid.visible = !grid.visible;
+    renderer.shadowMap.enabled = !renderer.shadowMap.enabled;
+    softbodies.forEach((soft) => {
+      soft.edges.visible = !dirLight.visible;
+    });
+  },
   recImage: () => {
     canvas.toBlob((blob: Blob) => {
       saveAs(blob, (1).toString() + ".png");
@@ -105,7 +114,7 @@ const controls = {
     });
   },
   recordingTime: 5,
-  toggle: () => {
+  toggleUpdating: () => {
     isPlaying = !isPlaying;
   },
   addObj: () => {
@@ -114,6 +123,7 @@ const controls = {
     switch (controls.selectedObjectType) {
       case 0:
         const soft = new SoftBodyObject(currentData, scene);
+        soft.edges.visible = !dirLight.visible;
         while (true) {
           let detectedCollisoin = false;
           soft.initLocation(bound * (0.5 - Math.random()), height, bound * (0.5 - Math.random()));
@@ -185,12 +195,13 @@ function initGUI() {
   const gui = new dat.GUI();
 
   const folder0 = gui.addFolder("Record");
+  folder0.add(controls, "toggleVisibility").name("Light On / Off");
   folder0.add(controls, "recImage").name("Capture Image");
   folder0.add(controls, "recVideo").name("Capture Video");
   folder0.add(controls, "recordingTime", 1, 60).step(1).name("Video Length (s)");
 
   const folder1 = gui.addFolder("Control");
-  folder1.add(controls, "toggle").name("Run / Pause");
+  folder1.add(controls, "toggleUpdating").name("Run / Pause");
   folder1.add(controls, "addObj").name("Add Object");
   folder1.add(controls, "reset").name("Reset");
   folder1
