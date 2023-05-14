@@ -1,6 +1,6 @@
 import * as vec from "./util/vector";
 
-import { SoftBodyObject, ParsedObjData } from "./softBody";
+import { SoftBodyObject, ParsedMsh } from "./softBody";
 import { RigidSphere } from "./rigidSphere";
 
 // ===================== COLLISION ====================

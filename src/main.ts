@@ -2,14 +2,12 @@ import * as dat from "dat.gui";
 import * as Stats from "stats.js";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import * as vec from "./util/vector";
-import { saveAs } from "file-saver";
 
-import { SoftBodyObject, ParsedObjData } from "./softBody";
+import { SoftBodyObject, ParsedMsh } from "./softBody";
 import { RigidSphere } from "./rigidSphere";
 import { checkCollision1, checkCollision2, solveCollision1, solveCollision2 } from "./collision";
 import { cursorPoint, grabbedMesh, grabbedVertId, useMouseInteration } from "./interaction";
-import { record } from "./util/record";
+import { captureCanvas, recordCanvas, zipFileSaver } from "./util/record";
 
 import { plotPoint, cleanAll, plotLine, emphasizePoint } from "./util/debug";
 
@@ -79,12 +77,13 @@ const bunnyData = require("./models/data/Bunny.json");
 const eggData = require("./models/data/Egg_.json");
 const bearData = require("./models/data/Bear_.json");
 const heartData = require("./models/data/Heart_.json");
-let dataList: Array<ParsedObjData> = [bunnyData, eggData, bearData, heartData];
-let currentData: ParsedObjData = bunnyData;
+let dataList: Array<ParsedMsh> = [bunnyData, eggData, bearData, heartData];
+let currentData: ParsedMsh = bunnyData;
 
 // ===================== CONTROL =====================
 
-var canvas = document.querySelector("canvas") as HTMLCanvasElement;
+const canvas = document.querySelector("canvas") as HTMLCanvasElement;
+const burstModeStorage = new zipFileSaver();
 
 const controls = {
   toggleVisibility: () => {
@@ -95,23 +94,19 @@ const controls = {
       soft.edges.visible = !dirLight.visible;
     });
   },
-  recImage: () => {
-    canvas.toBlob((blob: Blob) => {
-      saveAs(blob, (1).toString() + ".png");
-    });
+  burstShot: () => {
+    if (controls.isburstMode) {
+      burstModeStorage.save();
+      burstModeStorage.flush();
+    }
+    controls.isburstMode = !controls.isburstMode;
   },
-  recVideo: () => {
-    const recording = record(canvas, controls.recordingTime * 1000);
-    // play it on another video element
-    let video$ = document.createElement("video");
-    recording.then((url: string) => video$.setAttribute("src", url));
-    // download it
-    let link$ = document.createElement("a");
-    link$.setAttribute("download", "recordingVideo");
-    recording.then((url: string) => {
-      link$.setAttribute("href", url);
-      link$.click();
-    });
+  isburstMode: false,
+  capImage: () => {
+    captureCanvas(canvas);
+  },
+  capVideo: () => {
+    recordCanvas(canvas, controls.recordingTime * 1000);
   },
   recordingTime: 5,
   toggleUpdating: () => {
@@ -119,7 +114,6 @@ const controls = {
   },
   addObj: () => {
     let height = 1.5;
-    let cnt = 0;
     switch (controls.selectedObjectType) {
       case 0:
         const soft = new SoftBodyObject(currentData, scene);
@@ -137,7 +131,7 @@ const controls = {
             softbodies.push(soft);
             break;
           }
-          if (++cnt > 5) height += 1.5;
+          height += 1.5;
         }
         break;
       case 1:
@@ -157,7 +151,7 @@ const controls = {
             spheres.push(sphere);
             break;
           }
-          if (++cnt > 5) height += 1.5;
+          height += 1.5;
         }
         break;
     }
@@ -194,11 +188,12 @@ const controls = {
 function initGUI() {
   const gui = new dat.GUI();
 
-  const folder0 = gui.addFolder("Record");
+  const folder0 = gui.addFolder("Scene");
   folder0.add(controls, "toggleVisibility").name("Light On / Off");
-  folder0.add(controls, "recImage").name("Capture Image");
-  folder0.add(controls, "recVideo").name("Capture Video");
+  folder0.add(controls, "capImage").name("Capture Image");
+  folder0.add(controls, "capVideo").name("Capture Video");
   folder0.add(controls, "recordingTime", 1, 60).step(1).name("Video Length (s)");
+  folder0.add(controls, "burstShot").name("Burst Mode On / Off");
 
   const folder1 = gui.addFolder("Control");
   folder1.add(controls, "toggleUpdating").name("Run / Pause");
@@ -258,6 +253,9 @@ function main() {
     stats.begin();
     if (isPlaying) updateStates(controls.timeStepSize / 1000);
     renderer.render(scene, camera);
+    if (controls.isburstMode) {
+      burstModeStorage.store(canvas);
+    }
     stats.end();
   }
 }
@@ -269,23 +267,24 @@ function updateStates(dt: number) {
   }
   for (let n = 0; n < controls.numSubSteps; n++) {
     for (let soft of softbodies) {
-      soft.solveTetConstraints(dt);
-      soft.solveEdgeConstraints(dt, controls.invStiffness);
+      soft.solveVolumeConstraints(dt);
+      soft.solveLengthConstraints(dt, controls.invStiffness);
       if (controls.collisionCheck) {
         soft.spatial_hash.update();
         for (let other of softbodies) solveCollision1(soft, other);
         for (let sphere of spheres) solveCollision2(soft, sphere, dt);
       }
+      soft.handleBoundaries();
+    }
+    for (let sphere of spheres) {
+      sphere.handleCollision(spheres);
+      sphere.handleBoundaries();
     }
   }
-  for (let sphere of spheres) {
-    sphere.handleCollision(spheres);
-  }
   for (let soft of softbodies) {
-    soft.updateStates(dt);
+    soft.updateVelocities(dt);
   }
   for (let object of [...softbodies, ...spheres]) {
-    object.handleBoundaries();
     object.renderUpdate();
   }
 }

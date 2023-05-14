@@ -6,7 +6,7 @@ import { randomColor } from "./util/color";
 const hashSpace = 0.05;
 const hashSize = 5000;
 
-export type ParsedObjData = {
+export type ParsedMsh = {
   name: String;
   verts: Array<number>; // vertex positions in three units.
   tetIds: Array<number>; // the indices of vertices that form tetrahedrons in four units.
@@ -67,7 +67,7 @@ export class SoftBodyObject {
   is_surface_tet: Array<boolean>;
   vert_tets: Array<Array<number>>;
 
-  constructor(file: ParsedObjData, scene_: THREE.Scene) {
+  constructor(file: ParsedMsh, scene_: THREE.Scene) {
     this.init_positions = new Float32Array(file.verts);
     this.prev_positions = new Float32Array(file.verts);
     this.positions = new Float32Array(file.verts);
@@ -175,7 +175,7 @@ export class SoftBodyObject {
   grabInteract(dt: number, target: THREE.Vector3, id: number) {
     vec.setVec(this.positions, id, target);
   }
-  solveTetConstraints(dt: number) {
+  solveVolumeConstraints(dt: number) {
     for (let i = 0; i < this.tet_num; i++) {
       let x = new Uint16Array(4);
       let w = new Float32Array(4);
@@ -206,7 +206,7 @@ export class SoftBodyObject {
       }
     }
   }
-  solveEdgeConstraints(dt: number, alpha: number) {
+  solveLengthConstraints(dt: number, alpha: number) {
     for (let i = 0; i < this.edge_num; i++) {
       let x = new Uint16Array(2);
       let w = new Float32Array(2);
@@ -237,16 +237,11 @@ export class SoftBodyObject {
         if (gap < 0) {
           vec.addi(this.positions, i, boundNormal, k, -gap);
         }
-        if (gap < 0.01) {
-          for (let j = 0; j < 3; j++) {
-            this.velocities[i * 3 + j] *= -0.5 * boundNormal[j];
-          }
-        }
       }
     }
   }
 
-  updateStates(dt: number) {
+  updateVelocities(dt: number) {
     for (let i = 0; i < this.vert_num; i++) {
       vec.sub(this.velocities, i, this.positions, i, this.prev_positions, i);
       vec.scale(this.velocities, i, 1.0 / dt);
