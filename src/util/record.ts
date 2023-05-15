@@ -12,6 +12,10 @@ export class zipFileSaver {
     let dataURL = canvas.toDataURL("image/png", 1.0);
     let base64Data = dataURL.split(";base64,")[1];
     this.zip?.file(`PBD${++this.count}.png`, base64Data, { base64: true });
+    if(this.count % 100 === 0) {
+      this.save();
+      this.flush();
+    }
   }
   save() {
     this.zip.generateAsync({ type: "blob" }).then(function (content) {

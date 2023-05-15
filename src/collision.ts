@@ -3,7 +3,7 @@ import * as vec from "./util/vector";
 import { SoftBodyObject } from "./softBody";
 import { RigidSphereObject } from "./rigidSphere";
 
-const restitution = 0.5;
+const restitution = 0.1;
 
 export function checkCollision(obj1: SoftBodyObject | RigidSphereObject, obj2: SoftBodyObject | RigidSphereObject) {
   if (obj1 === obj2) return false;
@@ -89,7 +89,7 @@ function checkSoftToSoftCollision(obj1: SoftBodyObject, obj2: SoftBodyObject) {
 function solveSoftToSoftCollision(obj1: SoftBodyObject, obj2: SoftBodyObject) {
   for (let i = 0; i < obj2.vert_num; i++) {
     let closeIds = obj1.spatial_hash.query(obj2.positions, i, obj1.hash_space);
-    // let closeIds_naive = Array.from(Array(obj1.edge_num).keys());
+    // let closeIds = Array.from(Array(obj1.edge_num).keys());
 
     closeIds.forEach((constId) => {
       if (!obj1.is_surface_vert[constId]) return;

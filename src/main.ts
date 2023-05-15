@@ -86,6 +86,9 @@ const canvas = document.querySelector("canvas") as HTMLCanvasElement;
 const burstModeStorage = new zipFileSaver();
 
 const controls = {
+  debug: () => {
+    console.log(currentData);
+  },
   toggleVisibility: () => {
     dirLight.visible = !dirLight.visible;
     grid.visible = !grid.visible;
@@ -105,6 +108,7 @@ const controls = {
   },
   isburstMode: false,
   capImage: () => {
+    renderer.render(scene, camera);
     captureCanvas(canvas);
   },
   capVideo: () => {
@@ -151,7 +155,7 @@ const controls = {
   timeStepSize: 13,
   collisionCheck: false,
   gravity: 10,
-  invStiffness: 5,
+  invStiffness: 1,
   radius: 0.5,
 };
 
@@ -165,9 +169,10 @@ function initGUI() {
   folder0.add(controls, "capImage").name("Capture Image");
   folder0.add(controls, "capVideo").name("Capture Video");
   folder0.add(controls, "recordingTime", 1, 60).step(1).name("Video Length (s)");
-  folder0.add(controls, "burstShot").name("Burst Mode On / Off");
+  // folder0.add(controls, "burstShot").name("Burst Mode On / Off");
 
   const folder1 = gui.addFolder("Control");
+  // folder1.add(controls, "debug").name("Debug");
   folder1.add(controls, "toggleUpdating").name("Run / Pause");
   folder1.add(controls, "addObj").name("Add Object");
   folder1.add(controls, "reset").name("Reset");
@@ -201,7 +206,7 @@ function initGUI() {
 
   const folder3 = gui.addFolder("Parameters");
   folder3.add(controls, "gravity", 0.0, 10.0).step(0.1).name("Gravity");
-  folder3.add(controls, "invStiffness", 0.0, 10.0).step(0.1).name("Inverse Stiffness");
+  folder3.add(controls, "invStiffness", 0.0, 5.0).step(0.1).name("Inverse Stiffness");
 }
 
 // ===================== MAIN =====================
@@ -210,16 +215,16 @@ const objects: Array<SoftBodyObject | RigidSphereObject> = [];
 let isPlaying: Boolean = false;
 
 function main() {
-  let prevTime = new Date().getTime();
+  // let prevTime = new Date().getTime();
 
   const stats = new Stats();
   document.body.appendChild(stats.dom);
 
   animate();
   function animate() {
-    let currTime = new Date().getTime();
-    let timediff = (currTime - prevTime) / 1000;
-    prevTime = currTime;
+    // let currTime = new Date().getTime();
+    // let timediff = (currTime - prevTime) / 1000;
+    // prevTime = currTime;
     requestAnimationFrame(animate);
     stats.begin();
     if (isPlaying) updateStates(controls.timeStepSize / 1000);
@@ -240,8 +245,10 @@ function updateStates(dt: number) {
     for (let object of objects) {
       if (object instanceof SoftBodyObject) {
         object.solveVolumeConstraints(dt);
-        object.solveLengthConstraints(dt, controls.invStiffness);
+        object.solveLengthConstraints(dt, controls.invStiffness * controls.numSubSteps);
       }
+    }
+    for (let object of objects) {
       if (controls.collisionCheck) {
         if (object instanceof SoftBodyObject) {
           object.spatial_hash.update();
@@ -250,6 +257,8 @@ function updateStates(dt: number) {
           solveCollision(object, other, dt);
         }
       }
+    }
+    for (let object of objects) {
       object.handleBoundaries();
     }
   }
