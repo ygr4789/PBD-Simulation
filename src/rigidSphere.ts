@@ -26,7 +26,7 @@ const boundNormals = [
 export class RigidSphereObject {
   position: THREE.Vector3;
   velocity: THREE.Vector3;
-  invMass: number;
+  inv_mass: number;
   mesh: THREE.Mesh;
   radius: number;
 
@@ -34,7 +34,7 @@ export class RigidSphereObject {
     this.position = new THREE.Vector3();
     this.velocity = new THREE.Vector3();
     this.radius = radius_;
-    this.invMass = (4 * Math.PI) / this.radius ** 3;
+    this.inv_mass = (4 * Math.PI) / this.radius ** 3;
 
     const color = randomColor();
     const sphereGeo = new THREE.SphereGeometry(this.radius);
@@ -69,15 +69,15 @@ export class RigidSphereObject {
   }
 
   grabInteract(dt: number, target: THREE.Vector3, id: number) {
-    const updateRadio = 0.1;
+    const updateRatio = 0.1;
     const prevPosition = this.position.clone();
     this.position.copy(target);
     const instant = this.position
       .clone()
       .sub(prevPosition)
       .multiplyScalar(1 / dt);
-    instant.multiplyScalar(updateRadio);
-    this.velocity.multiplyScalar(1 - updateRadio);
+    instant.multiplyScalar(updateRatio);
+    this.velocity.multiplyScalar(1 - updateRatio);
     this.velocity.add(instant);
   }
 

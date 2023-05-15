@@ -19,7 +19,11 @@ export function checkCollision(obj1: SoftBodyObject | RigidSphereObject, obj2: S
   return false;
 }
 
-export function solveCollision(obj1: SoftBodyObject | RigidSphereObject, obj2: SoftBodyObject | RigidSphereObject, dt: number) {
+export function solveCollision(
+  obj1: SoftBodyObject | RigidSphereObject,
+  obj2: SoftBodyObject | RigidSphereObject,
+  dt: number
+) {
   if (obj1 === obj2) return;
   if (obj1 instanceof SoftBodyObject && obj2 instanceof SoftBodyObject) {
     solveSoftToSoftCollision(obj1, obj2);
@@ -118,21 +122,26 @@ function solveSoftToSoftCollision(obj1: SoftBodyObject, obj2: SoftBodyObject) {
           vec.sub(vec.seg, 0, obj1.positions, s[0], obj2.positions, i);
           vec.sub(vec.seg, 1, obj1.positions, s[1], obj1.positions, s[0]);
           vec.sub(vec.seg, 2, obj1.positions, s[2], obj1.positions, s[1]);
-          vec.cross(vec.tmp, 0, vec.seg, 2, vec.seg, 1);
-          vec.normalize(vec.tmp, 0);
-          var mag = vec.dot(vec.tmp, 0, vec.seg, 0);
-          vec.scale(vec.tmp, 0, mag);
+          vec.cross(vec.tmp, 3, vec.seg, 2, vec.seg, 1);
+          let C = Math.abs(vec.dot(vec.tmp, 3, vec.seg, 0));
 
-          let m1 = 0,
-            m2 = 1 / obj2.inv_masses[i];
-          for (let k = 0; k < 4; k++) {
-            m1 += 1 / obj1.inv_masses[k];
-          }
+          if (vec.dot(vec.tmp, 3, vec.seg, 0) < 0) vec.scale(vec.tmp, 3, -1);
+          let denom = vec.normSquare(vec.tmp, 3) * obj2.inv_masses[i];
 
-          for (let k = 0; k < 4; k++) {
-            vec.subi(obj1.positions, p[k], vec.tmp, 0, m2 / 4 / (m1 + m2));
+          vec.sub(vec.seg, 1, obj1.positions, s[1], obj2.positions, i);
+          vec.sub(vec.seg, 2, obj1.positions, s[2], obj2.positions, i);
+          for (let k = 0; k < 3; k++) {
+            vec.cross(vec.tmp, k, vec.seg, (k + 1) % 3, vec.seg, (k + 2) % 3);
+            if (vec.dot(vec.tmp, k, vec.seg, k) > 0) vec.scale(vec.tmp, k, -1);
+            denom += vec.normSquare(vec.tmp, k) * obj1.inv_masses[s[k]];
           }
-          vec.addi(obj2.positions, i, vec.tmp, 0, m1 / (m1 + m2));
+          if (denom === 0.0) return;
+
+          let lambda = C / denom;
+          vec.addi(obj2.positions, i, vec.tmp, 3, lambda * obj2.inv_masses[i]);
+          for (let k = 0; k < 3; k++) {
+            vec.addi(obj1.positions, s[j], vec.tmp, j, lambda * obj1.inv_masses[s[j]]);
+          }
           return;
         });
       }
@@ -153,7 +162,7 @@ function solveSoftToRigidCollision(soft: SoftBodyObject, rigid: RigidSphereObjec
       let dx = vec.dist(vec.tmp, 1, soft.positions, i);
       let I = dx / dt / soft.inv_masses[i];
 
-      rigid.velocity.sub(vec.toVec(vec.tmp, 0).multiplyScalar(I * rigid.invMass));
+      rigid.velocity.sub(vec.toVec(vec.tmp, 0).multiplyScalar(I * rigid.inv_mass));
     }
   }
 }
@@ -163,9 +172,12 @@ function solveRigidToRigidCollision(obj1: RigidSphereObject, obj2: RigidSphereOb
   const gap = dir.length() - obj2.radius - obj1.radius;
   const relProj = dir.dot(obj2.velocity.clone().sub(obj1.velocity));
   dir.normalize();
+  let w1 = obj1.inv_mass;
+  let w2 = obj2.inv_mass;
+  let lamba = (1 + restitution) / (w1 + w2);
   if (gap < 0.01 && relProj < 0) {
-    obj2.velocity.add(dir.clone().multiplyScalar(-relProj * restitution));
-    obj1.velocity.add(dir.clone().multiplyScalar(relProj * restitution));
+    obj1.velocity.add(dir.clone().multiplyScalar(relProj * lamba * w1));
+    obj2.velocity.add(dir.clone().multiplyScalar(-relProj * lamba * w2));
   }
   if (gap < 0) {
     obj2.position.add(dir.clone().multiplyScalar(-gap));

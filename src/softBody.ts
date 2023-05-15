@@ -5,6 +5,7 @@ import { randomColor } from "./util/color";
 
 const hashSpace = 0.05;
 const hashSize = 5000;
+const preDir = new Float32Array([1.0, -1.0, 1.0, -1.0]);
 
 export type ParsedMsh = {
   name: String;
@@ -129,7 +130,7 @@ export class SoftBodyObject {
       }
 
       vec.cross(vec.tmp, 0, vec.seg, 0, vec.seg, 1);
-      this.init_tet_volumes[i] = vec.dot(vec.tmp, 0, vec.seg, 2) / 6;
+      this.init_tet_volumes[i] = vec.dot(vec.tmp, 0, vec.seg, 2);
 
       for (let j = 0; j < 4; j++) {
         this.inv_masses[x[j]] += this.init_tet_volumes[i] / 4;
@@ -189,19 +190,18 @@ export class SoftBodyObject {
         vec.sub(vec.seg, j, this.positions, x[(j + 1) % 4], this.positions, x[j % 4]);
       }
       vec.cross(vec.tmp, 0, vec.seg, 0, vec.seg, 1);
-      let V = vec.dot(vec.tmp, 0, vec.seg, 2) / 6;
+      let V = vec.dot(vec.tmp, 0, vec.seg, 2);
       let V0 = this.init_tet_volumes[i];
 
       let denom = 0;
-      let dir = new Float32Array([1.0, -1.0, 1.0, -1.0]);
       for (let j = 0; j < 4; j++) {
         vec.cross(vec.tmp, j, vec.seg, (j + 1) % 4, vec.seg, (j + 2) % 4);
-        vec.scale(vec.tmp, j, dir[j]);
+        vec.scale(vec.tmp, j, preDir[j]);
         denom += vec.normSquare(vec.tmp, j) * w[j];
       }
       if (denom == 0.0) continue;
 
-      let lambda = (6.0 * (V - V0)) / denom;
+      let lambda = (V - V0) / denom;
       for (let j = 0; j < 4; j++) {
         vec.addi(this.positions, x[j], vec.tmp, j, lambda * w[j]);
       }
