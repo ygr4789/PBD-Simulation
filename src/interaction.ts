@@ -13,7 +13,7 @@ export let grabbedVertId = -1;
 
 export function useMouseInteration(
   camera: THREE.Camera,
-  control: OrbitControls,
+  // control: OrbitControls,
   objects: Array<SoftBodyObject | RigidSphereObject>
 ) {
   const mouse = new THREE.Vector2();
@@ -36,7 +36,7 @@ export function useMouseInteration(
       grabbedMesh = intersects[0].object;
       planeNormal.copy(camera.position).normalize();
       plane.setFromNormalAndCoplanarPoint(planeNormal, grabbedPoint);
-      control.enabled = false;
+      // control.enabled = false;
 
       let closestDist = Number.MAX_VALUE;
       for (let obj of objects) {
@@ -56,6 +56,6 @@ export function useMouseInteration(
 
   window.addEventListener("mouseup", () => {
     grabbedMesh = null;
-    control.enabled = true;
+    // control.enabled = true;
   });
 }

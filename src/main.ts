@@ -12,7 +12,17 @@ import { captureCanvas, recordCanvas, zipFileSaver } from "./util/record";
 import { plotPoint, cleanAll, plotLine, emphasizePoint } from "./util/debug";
 
 import "./style/style.css";
-import { boundX, boundZ } from "./util/consts";
+import {
+  boundX,
+  boundZ,
+  cycle_num,
+  pre_dec_color,
+  pre_dec_frame,
+  pre_dec_shape,
+  pre_dec_theta,
+  pre_dec_Y,
+  pre_dec_Z,
+} from "./util/consts";
 
 const scene = new THREE.Scene();
 const setcolor = 0xa0a0e0;
@@ -26,14 +36,22 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000.0);
-camera.position.set(1, 1, 2);
-
-const orbitControl = new OrbitControls(camera, renderer.domElement);
-orbitControl.listenToKeyEvents(window);
+const camera = new THREE.OrthographicCamera(
+  -boundZ * 2,
+  boundZ * 2,
+  boundZ * 2 * (window.innerHeight / window.innerWidth),
+  -boundZ * 2 * (window.innerHeight / window.innerWidth),
+  -100.0,
+  100.0
+);
+camera.position.set(1.3, 1.3, 0.3);
+camera.lookAt(0, 1.3, 0);
 
 function window_onsize() {
-  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.left = -boundZ * 2;
+  camera.right = boundZ * 2;
+  camera.top = boundZ * 2 * (window.innerHeight / window.innerWidth);
+  camera.bottom = -boundZ * 2 * (window.innerHeight / window.innerWidth);
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
@@ -70,17 +88,6 @@ scene.add(ground);
 
 // ===================== DATA =====================
 
-// const tetrahedronData = require("./models/data/Tetrahedron.json");
-// // Dummy data, used for debugging
-// const bunnyData = require("./models/data/Bunny.json");
-// const eggData = require("./models/data/Egg_.json");
-// const bearData = require("./models/data/Bear_.json");
-// const heartData = require("./models/data/Heart_.json");
-// let dataList: Array<ParsedMsh> = [bunnyData, eggData, bearData, heartData];
-// let currentData: ParsedMsh = bunnyData;
-
-// ===================== TETRIS!!! =====================
-
 const iMino = require("./models/tetris/data/i_.json");
 const jMino = require("./models/tetris/data/j_.json");
 const lMino = require("./models/tetris/data/l_.json");
@@ -89,7 +96,7 @@ const tMino = require("./models/tetris/data/t_.json");
 const sMino = require("./models/tetris/data/s_.json");
 const zMino = require("./models/tetris/data/z_.json");
 let dataList: Array<ParsedMsh> = [iMino, jMino, lMino, oMino, tMino, sMino, zMino];
-let currentData: ParsedMsh = tMino;
+let currentData: ParsedMsh = iMino;
 
 // ===================== CONTROL =====================
 
@@ -112,8 +119,7 @@ const controls = {
   },
   burstShot: () => {
     if (controls.isburstMode) {
-      burstModeStorage.save();
-      burstModeStorage.flush();
+      burstModeStorage.close();
     }
     controls.isburstMode = !controls.isburstMode;
   },
@@ -130,29 +136,13 @@ const controls = {
     isPlaying = !isPlaying;
   },
   addObj: () => {
-    let height = 1.5;
+    console.log(frameCount);
     let object;
-    switch (controls.selectedObjectType) {
-      case 0:
-        object = new SoftBodyObject(currentData, scene);
-        object.edges.visible = !dirLight.visible;
-        break;
-      default:
-        object = new RigidSphereObject(controls.radius, scene);
-        break;
-    }
-    while (true) {
-      let detectedCollisoin = false;
-      object.initLocation(0, height, 0);
-      for (let other of objects) {
-        if (checkCollision(object, other)) detectedCollisoin = true;
-      }
-      if (!detectedCollisoin) {
-        objects.push(object);
-        break;
-      }
-      height += 1.5;
-    }
+    let order = objects.length % cycle_num;
+    object = new SoftBodyObject(dataList[pre_dec_shape[order]], scene);
+    object.edges.visible = !dirLight.visible;
+    object.initLocation(0, pre_dec_Y[order], pre_dec_Z[order], pre_dec_theta[order]);
+    objects.push(object);
   },
   reset: () => {
     while (objects.length > 0) {
@@ -162,11 +152,12 @@ const controls = {
   },
   selectedObjectType: 0,
   selectedData: 0,
-  numSubSteps: 10,
+  numSubSteps: 1,
+  numDevideSteps: 4,
   timeStepSize: 13,
-  collisionCheck: false,
-  gravity: 10,
-  invStiffness: 1,
+  collisionCheck: true,
+  gravity: 1.5,
+  invStiffness: 0.05,
   radius: 0.5,
 };
 
@@ -174,56 +165,63 @@ const controls = {
 
 function initGUI() {
   const gui = new dat.GUI();
-
-  const folder0 = gui.addFolder("Scene");
-  folder0.add(controls, "toggleVisibility").name("Light On / Off");
-  folder0.add(controls, "capImage").name("Capture Image");
-  folder0.add(controls, "capVideo").name("Capture Video");
-  folder0.add(controls, "recordingTime", 1, 60).step(1).name("Video Length (s)");
+  
+  gui.add(controls, "toggleUpdating").name("Run / Pause");
+  gui.add(controls, "burstShot").name("Generate Sequrntial Image On / Off");
+  // const folder0 = gui.addFolder("Scene");
+  // folder0.add(controls, "toggleVisibility").name("Light On / Off");
+  // folder0.add(controls, "capImage").name("Capture Image");
+  // folder0.add(controls, "capVideo").name("Capture Video");
+  // folder0.add(controls, "recordingTime", 1, 60).step(1).name("Video Length (s)");
   // folder0.add(controls, "burstShot").name("Burst Mode On / Off");
 
-  const folder1 = gui.addFolder("Control");
+  // const folder1 = gui.addFolder("Control");
   // folder1.add(controls, "debug").name("Debug");
-  folder1.add(controls, "toggleUpdating").name("Run / Pause");
-  folder1.add(controls, "addObj").name("Add Object");
-  folder1.add(controls, "reset").name("Reset");
-  folder1
-    .add(controls, "selectedObjectType", {
-      SoftBody: 0,
-      RigidBody: 1,
-    })
-    .name("Object Type")
-    .onChange((id) => {
-      controls.selectedObjectType = parseInt(id);
-    });
-  folder1
-    .add(controls, "selectedData", {
-      Bunny: 0,
-      Egg: 1,
-      Bear: 2,
-      Heart: 3,
-    })
-    .name("Shape")
-    .onChange((id) => {
-      controls.selectedData = parseInt(id);
-      currentData = dataList[id];
-    });
-  folder1.add(controls, "radius", 0.1, 1).step(0.1).name("Radius");
+  // folder1.add(controls, "toggleUpdating").name("Run / Pause");
+  // folder1.add(controls, "addObj").name("Add Object");
+  // folder1.add(controls, "reset").name("Reset");
+  // folder1
+  //   .add(controls, "selectedObjectType", {
+  //     SoftBody: 0,
+  //     RigidBody: 1,
+  //   })
+  //   .name("Object Type")
+  //   .onChange((id) => {
+  //     controls.selectedObjectType = parseInt(id);
+  //   });
+  // folder1
+  //   .add(controls, "selectedData", {
+  //     I: 0,
+  //     L: 1,
+  //     J: 2,
+  //     O: 3,
+  //     T: 4,
+  //     S: 5,
+  //     Z: 6,
+  //   })
+  //   .name("Shape")
+  //   .onChange((id) => {
+  //     controls.selectedData = parseInt(id);
+  //     currentData = dataList[id];
+  //   });
+  // folder1.add(controls, "radius", 0.1, 1).step(0.1).name("Radius");
 
-  const folder2 = gui.addFolder("Simulation");
-  folder2.add(controls, "numSubSteps", 1, 50).step(1).name("Sub Step");
-  folder2.add(controls, "timeStepSize", 1, 100).step(1).name("Time Step (ms)");
-  folder2.add(controls, "collisionCheck").name("Collision Check");
+  // const folder2 = gui.addFolder("Simulation");
+  // folder2.add(controls, "numSubSteps", 1, 50).step(1).name("Sub Step");
+  // folder2.add(controls, "numDevideSteps", 1, 50).step(1).name("Devide Step");
+  // folder2.add(controls, "timeStepSize", 1, 100).step(1).name("Time Step (ms)");
+  // folder2.add(controls, "collisionCheck").name("Collision Check");
 
-  const folder3 = gui.addFolder("Parameters");
-  folder3.add(controls, "gravity", 0.0, 10.0).step(0.1).name("Gravity");
-  folder3.add(controls, "invStiffness", 0.0, 5.0).step(0.1).name("Inverse Stiffness");
+  // const folder3 = gui.addFolder("Parameters");
+  // folder3.add(controls, "gravity", 0.0, 10.0).step(0.1).name("Gravity");
+  // folder3.add(controls, "invStiffness", 0.0, 5.0).step(0.1).name("Inverse Stiffness");
 }
 
 // ===================== MAIN =====================
 
 const objects: Array<SoftBodyObject | RigidSphereObject> = [];
 let isPlaying: Boolean = false;
+let frameCount = 0;
 
 function main() {
   // let prevTime = new Date().getTime();
@@ -238,7 +236,17 @@ function main() {
     // prevTime = currTime;
     requestAnimationFrame(animate);
     stats.begin();
-    if (isPlaying) updateStates(controls.timeStepSize / 1000);
+    if (isPlaying) {
+      let order = objects.length % cycle_num;
+      if (frameCount === pre_dec_frame[order]) {
+        controls.addObj();
+        (objects[order].mesh.material as THREE.MeshPhongMaterial).color = pre_dec_color[order];
+      }
+      frameCount++;
+      for (let i = 0; i < controls.numDevideSteps; i++) {
+        updateStates(controls.timeStepSize / controls.numDevideSteps / 1000);
+      }
+    }
     renderer.render(scene, camera);
     if (controls.isburstMode) {
       burstModeStorage.store(canvas);
@@ -259,6 +267,8 @@ function updateStates(dt: number) {
         object.solveLengthConstraints(dt, controls.invStiffness * controls.numSubSteps);
       }
     }
+  }
+  for (let n = 0; n < controls.numSubSteps; n++) {
     for (let object of objects) {
       if (controls.collisionCheck) {
         if (object instanceof SoftBodyObject) {
@@ -288,7 +298,8 @@ function preventDefault() {
 
 window.onload = () => {
   preventDefault();
-  useMouseInteration(camera, orbitControl, objects);
+  // useMouseInteration(camera, orbitControl, objects);
+  useMouseInteration(camera, objects);
   initGUI();
   main();
 };

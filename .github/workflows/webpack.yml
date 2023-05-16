@@ -2,9 +2,7 @@ name: NodeJS with Webpack
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    branches: [ "tetris" ]
 
 jobs:
   build:
@@ -42,4 +40,5 @@ jobs:
       uses: peaceiris/actions-gh-pages@v3
       with:
         personal_token: ${{ secrets.PERSONAL_TOKEN }}
-        publish_dir: ./dist
+        publish_dir: ./dist/tetris
+        keep_files: true

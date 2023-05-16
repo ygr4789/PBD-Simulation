@@ -1,12 +1,12 @@
 # PBD-Simulation
 
-[![Demo Video](http://img.youtube.com/vi/9tQFjZhdb7E/0.jpg)](https://youtu.be/9tQFjZhdb7E)
+[![Demo Video](http://img.youtube.com/vi/R2YqQuw6CCU/0.jpg)](https://youtu.be/R2YqQuw6CCU)
 
-[Demo Link](https://ygr4789.github.io/PBD-Simulation/)
+[Demo Link](https://ygr4789.github.io/PBD-Simulation/tetris)
 
-## Convert an OBJ model to JSON format
+## Caution
 
-The `src/models/object` directory stores models in `obj` format. In the `src/models` directory, `make all` command converts those to a tetrahedron mesh and parse it to `.json` format, which is need for this simulatoin. [PyMesh](https://github.com/PyMesh/PyMesh) must be installed.
+When you click `Generate Sequential Image` button, it keeps capturing screenshot of every individual frame and download it until you click it again. Each frame is saved in `.png` format and compressed into a `.zip` in increments of 100. This can take up quite a bit of memory and storage in high frame rate situations.
 
 ## How to run local
 

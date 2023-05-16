@@ -19,11 +19,17 @@ export class zipFileSaver {
   }
   save() {
     this.zip.generateAsync({ type: "blob" }).then(function (content) {
-      saveAs(content, "PBD_SequntialCapture.zip");
+      saveAs(content, `PBD_SequntialCapture.zip`);
     });
   }
   flush() {
     this.zip = new JSZip();
+  }
+  close() {
+    this.zip.generateAsync({ type: "blob" }).then(function (content) {
+      saveAs(content, `PBD_SequntialCapture_Last.zip`);
+    });
+    this.flush();
   }
 }
 

@@ -122,6 +122,7 @@ function solveSoftToSoftCollision(obj1: SoftBodyObject, obj2: SoftBodyObject) {
           vec.sub(vec.seg, 0, obj1.positions, s[0], obj2.positions, i);
           vec.sub(vec.seg, 1, obj1.positions, s[1], obj1.positions, s[0]);
           vec.sub(vec.seg, 2, obj1.positions, s[2], obj1.positions, s[1]);
+          ///
           vec.cross(vec.tmp, 3, vec.seg, 2, vec.seg, 1);
           let C = Math.abs(vec.dot(vec.tmp, 3, vec.seg, 0));
 
@@ -143,6 +144,23 @@ function solveSoftToSoftCollision(obj1: SoftBodyObject, obj2: SoftBodyObject) {
             vec.addi(obj1.positions, s[j], vec.tmp, j, lambda * obj1.inv_masses[s[j]]);
           }
           return;
+          ///
+          // vec.cross(vec.tmp, 0, vec.seg, 2, vec.seg, 1);
+          // vec.normalize(vec.tmp, 0);
+          // var mag = vec.dot(vec.tmp, 0, vec.seg, 0);
+          // vec.scale(vec.tmp, 0, mag);
+
+          // let m1 = 0,
+          //   m2 = 1 / obj2.inv_masses[i];
+          // for (let k = 0; k < 4; k++) {
+          //   m1 += 1 / obj1.inv_masses[k];
+          // }
+
+          // for (let k = 0; k < 4; k++) {
+          //   vec.subi(obj1.positions, p[k], vec.tmp, 0, 0.2);
+          // }
+          // vec.addi(obj2.positions, i, vec.tmp, 0, 0.5);
+          // return;
         });
       }
     });

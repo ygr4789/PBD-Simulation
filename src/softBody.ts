@@ -250,11 +250,17 @@ export class SoftBodyObject {
     }
   }
 
-  initLocation(x: number, y: number, z: number) {
+  initLocation(x: number, y: number, z: number, theta: number = 0) {
     for (let i = 0; i < this.vert_num; i++) {
-      this.positions[3 * i] = this.init_positions[3 * i] + x;
-      this.positions[3 * i + 1] = this.init_positions[3 * i + 1] + y;
-      this.positions[3 * i + 2] = this.init_positions[3 * i + 2] + z;
+      let x0 = this.init_positions[3 * i];
+      let y0 = this.init_positions[3 * i + 1];
+      let z0 = this.init_positions[3 * i + 2];
+      let y0_ = y0 * Math.cos(theta) + z0 * Math.sin(theta);
+      let z0_ = -y0 * Math.sin(theta) + z0 * Math.cos(theta);
+
+      this.positions[3 * i] = x0 + x;
+      this.positions[3 * i + 1] = y0_ + y;
+      this.positions[3 * i + 2] = z0_ + z;
     }
   }
 
