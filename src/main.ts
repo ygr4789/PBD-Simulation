@@ -71,14 +71,26 @@ scene.add(ground);
 
 // ===================== DATA =====================
 
-const tetrahedronData = require("./models/data/Tetrahedron.json");
-// Dummy data, used for debugging
-const bunnyData = require("./models/data/Bunny.json");
-const eggData = require("./models/data/Egg_.json");
-const bearData = require("./models/data/Bear_.json");
-const heartData = require("./models/data/Heart_.json");
-let dataList: Array<ParsedMsh> = [bunnyData, eggData, bearData, heartData];
-let currentData: ParsedMsh = bunnyData;
+// const tetrahedronData = require("./models/data/Tetrahedron.json");
+// // Dummy data, used for debugging
+// const bunnyData = require("./models/data/Bunny.json");
+// const eggData = require("./models/data/Egg_.json");
+// const bearData = require("./models/data/Bear_.json");
+// const heartData = require("./models/data/Heart_.json");
+// let dataList: Array<ParsedMsh> = [bunnyData, eggData, bearData, heartData];
+// let currentData: ParsedMsh = bunnyData;
+
+// ===================== TETRIS!!! =====================
+
+const iMino = require("./models/tetris/data/i_.json");
+const jMino = require("./models/tetris/data/j_.json");
+const lMino = require("./models/tetris/data/l_.json");
+const oMino = require("./models/tetris/data/o_.json");
+const tMino = require("./models/tetris/data/t_.json");
+const sMino = require("./models/tetris/data/s_.json");
+const zMino = require("./models/tetris/data/z_.json");
+let dataList: Array<ParsedMsh> = [iMino, jMino, lMino, oMino, tMino, sMino, zMino];
+let currentData: ParsedMsh = tMino;
 
 // ===================== CONTROL =====================
 

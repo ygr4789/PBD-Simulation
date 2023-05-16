@@ -13,7 +13,8 @@ CONVERTER_DIR=./converter.py
 EDGE_LENGTH=0.1 # 0.05 default
 EPSILON=0.01 # 0.001 default
 
-OUTPUT_DIAG_LENGTH=2
+OPTION=l
+OUTPUT_FACTOR=2
 
 all: $(JSON)
 
@@ -22,7 +23,7 @@ all: $(JSON)
 	&& rm -f $(foreach suf, $(GERBAGE_SUFFIX), $*$(suf))
 
 %.json: %.msh
-	python $(CONVERTER_DIR) $*_.msh -d $(OUTPUT_DIR) -l $(OUTPUT_DIAG_LENGTH) \
+	python $(CONVERTER_DIR) $*_.msh -d $(OUTPUT_DIR) -$(OPTION) $(OUTPUT_FACTOR) \
 	&& rm -f $*_.msh
 
 clean:
