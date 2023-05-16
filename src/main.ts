@@ -12,6 +12,7 @@ import { captureCanvas, recordCanvas, zipFileSaver } from "./util/record";
 import { plotPoint, cleanAll, plotLine, emphasizePoint } from "./util/debug";
 
 import "./style/style.css";
+import { boundX, boundZ } from "./util/consts";
 
 const scene = new THREE.Scene();
 const setcolor = 0xa0a0e0;
@@ -53,14 +54,12 @@ scene.add(dirLight);
 
 // ================ Creating Ground ================
 
-const bound = 5.0;
-
-const groundGeo = new THREE.PlaneGeometry(2 * bound, 2 * bound, 1, 1);
+const groundGeo = new THREE.PlaneGeometry(2 * boundX, 2 * boundZ, 1, 1);
 const groundMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 155, side: THREE.DoubleSide });
 const ground = new THREE.Mesh(groundGeo, groundMat);
 ground.rotation.x = -Math.PI * 0.5;
 ground.receiveShadow = true;
-const grid = new THREE.GridHelper(2 * bound, 2 * bound, 0xffffff, 0xaaaaaa);
+const grid = new THREE.GridHelper(2 * boundX, 2 * boundZ, 0xffffff, 0xaaaaaa);
 (grid.material as THREE.Material).opacity = 1.0;
 (grid.material as THREE.Material).transparent = true;
 grid.position.set(0, 0.002, 0);
@@ -144,7 +143,7 @@ const controls = {
     }
     while (true) {
       let detectedCollisoin = false;
-      object.initLocation(bound * (0.5 - Math.random()), height, bound * (0.5 - Math.random()));
+      object.initLocation(0, height, 0);
       for (let other of objects) {
         if (checkCollision(object, other)) detectedCollisoin = true;
       }

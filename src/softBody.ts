@@ -2,6 +2,7 @@ import * as THREE from "three";
 import * as vec from "./util/vector";
 import { SpatialHash } from "./util/hash";
 import { randomColor } from "./util/color";
+import { boundX, boundZ } from "./util/consts";
 
 const hashSpace = 0.05;
 const hashSize = 5000;
@@ -17,15 +18,14 @@ export type ParsedMsh = {
 
 // ===================== BOUNDARY =====================
 
-const bound = 5.0;
 const bound_num = 5;
 // prettier-ignore
 const boundPosition = new Float32Array([
   0.0, 0.0, 0.0, // grond
-  bound, 0.0, 0.0, // maxX
-  -bound, 0.0, 0.0, // minX
-  0.0, 0.0, bound, // maxZ
-  0.0, 0.0, -bound, // minZ
+  boundX, 0.0, 0.0, // maxX
+  -boundX, 0.0, 0.0, // minX
+  0.0, 0.0, boundZ, // maxZ
+  0.0, 0.0, -boundZ, // minZ
 ]);
 // prettier-ignore
 const boundNormal = new Float32Array([
